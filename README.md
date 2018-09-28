@@ -24,7 +24,7 @@ To run specific methods, use the following:
 
 For information on further options: `./main.py -h`.
 
-A comparison of all methods used in [our paper]() can be run with 
+A comparison of all methods used in [our paper](https://arxiv.org/abs/1809.10635) can be run with 
 `compare_MNIST.py`.
 
 ## On-the-fly plots during training
