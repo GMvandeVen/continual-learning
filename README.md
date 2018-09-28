@@ -1,7 +1,7 @@
 # Continual Learning & Replay-through-Feedback
 This is a PyTorch implementation of the continual learning experiments described in the following paper:
-* Gido M. van de Ven, Andreas S. Tolias (2018) Generative Replay with Feedback Connections as a General Strategy 
-for Continual Learning, [arXiv preprint](...)
+* Gido M. van de Ven, Andreas S. Tolias (2018) Generative replay with feedback connections as a general strategy 
+for continual learning, [arXiv preprint](https://arxiv.org/abs/1809.10635)
 
 ## Requirements
 The code has been tested with:
@@ -33,22 +33,22 @@ which can be installed as follows:
 ```bash
 pip install visdom
 ```
-Before running the experiments, the visdom server should then be started from the command line:
+Before running the experiments, the visdom server should be started from the command line:
 ```bash
 python -m visdom.server
 ```
 The visdom server is now alive and can be accessed at `http://localhost:8097` in your browser (the plots will appear
-here). The flag `--visdom` should then be added when calling `./main.py` to run the experiments.
+here). The flag `--visdom` should then be added when calling `./main.py` to run the experiments with on-the-fly plots.
 
 For more information on `visdom` see <https://github.com/facebookresearch/visdom>.
 
 ### Citation
 Please consider citing our paper if you use this code in your research:
 ```
-@article{...,
-  title={{...}},
+@article{vandeven2018generative,
+  title={Generative replay with feedback connections as a general strategy for continual learning},
   author={van de Ven, Gido M and Tolias, Andreas S},
-  journal={arXiv},
+  journal={arXiv preprint arXiv:1809.10635},
   year={2018}
 }
 ```
