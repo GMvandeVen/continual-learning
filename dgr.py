@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from torch.autograd import Variable
 
 
 class Scholar(nn.Module):
@@ -18,7 +17,7 @@ class Scholar(nn.Module):
 
 
     def sample(self, size, allowed_predictions=None, return_scores=False):
-        '''Sample a set of [size] generated images + labels. Returned as tensors (not wrapped in Variable).
+        '''Generate [size] samples from the model. Outputs are tensors (not "requiring grad"), on same device as <self>.
 
         INPUT:  - [allowed_predictions] <list> of [class_ids] which are allowed to be predicted
                 - [return_scores]       <bool>; if True, [y_hat] is also returned
@@ -35,8 +34,8 @@ class Scholar(nn.Module):
         x, _ = self.generator.sample(size)
 
         # get predicted logit-scores
-        x = Variable(x).cuda() if self.solver._is_on_cuda() else Variable(x)
-        y_hat = self.solver(x)
+        with torch.no_grad():
+            y_hat = self.solver(x)
         y_hat = y_hat[:, allowed_predictions] if (allowed_predictions is not None) else y_hat
 
         # get predicted class-labels (indexed according to each class' position in [allowed_predictions]!)
@@ -45,4 +44,4 @@ class Scholar(nn.Module):
         # set model back to its initial mode
         self.train(mode=mode)
 
-        return (x.data, y.data, y_hat.data) if return_scores else (x.data, y.data)
+        return (x, y, y_hat) if return_scores else (x, y)

@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from torch.autograd import Variable
 from torch.nn import functional as F
 import excitability_modules as eM
 import utils
@@ -94,7 +93,7 @@ class AutoEncoder(Replayer):
     def reparameterize(self, mu, logvar):
         '''Perform "reparametrization trick" to make these stochastic variables differentiable.'''
         std = logvar.mul(0.5).exp_()
-        eps = Variable(std.data.new(std.size()).normal_())
+        eps = std.new(std.size()).normal_()
         return eps.mul(std).add_(mu)
 
     def decode(self, z):
@@ -130,7 +129,7 @@ class AutoEncoder(Replayer):
 
 
     def sample(self, size, allowed_predictions=None, return_scores=False):
-        '''Generate [size] samples from the model. Outputs are tensors, but not wrapped in Variables.
+        '''Generate [size] samples from the model. Outputs are tensors (not "requiring grad"), on same device as <self>.
 
         INPUT:  - [allowed_predictions] <list> of [class_ids] which are allowed to be predicted
                 - [return_scores]       <bool>; if True, [y_hat] is also returned
@@ -145,13 +144,15 @@ class AutoEncoder(Replayer):
 
         # sample z
         z = torch.randn(size, self.z_dim)
+        z = z.to(self._device())
 
         # decode z into image X
-        z = Variable(z).cuda() if self._is_on_cuda() else Variable(z)
-        X = self.decode(z)
+        with torch.no_grad():
+            X = self.decode(z)
 
         # use forward model to predict scores of generated images
-        y_hat = self.classify(X)
+        with torch.no_grad():
+            y_hat = self.classify(X)
         y_hat = y_hat[:, allowed_predictions] if (allowed_predictions is not None) else y_hat
         # get "predicted" class-labels (indexed according to each class' position in [allowed_predictions]!)
         _, y = torch.max(y_hat, dim=1)
@@ -160,13 +161,11 @@ class AutoEncoder(Replayer):
         self.train(mode=mode)
 
         # return samples as [batch_size]x[channels]x[image_size]x[image_size] tensor, plus classes-labels
-        return (X.data, y.data, y_hat.data) if return_scores else (X.data, y.data)
+        return (X, y, y_hat) if return_scores else (X, y)
 
 
     def loss_function(self, recon_x, x, y_hat=None, y_target=None, scores=None, mu=None, logvar=None):
         '''Calculate and return various losses that could be used for training and/or evaluating the model.
-
-        (All tensors in the input and output should be wrapped in Variables.)
 
         INPUT:  - [x_recon]         <4D-tensor> reconstructed image in same shape as [x]
                 - [x]               <4D-tensor> original image
@@ -195,22 +194,20 @@ class AutoEncoder(Replayer):
             variatL /= (self.image_channels * self.image_size ** 2)
             # --> because self.recon_criterion averages over batch-size but also over all pixels/elements in recon!!
         else:
-            variatL = Variable(torch.zeros(1)).cuda() if self._is_on_cuda() else Variable(torch.zeros(1))
+            variatL = torch.tensor(0., device=self._device())
 
         ###-----Prediction loss-----###
         if y_target is not None:
             predL = F.cross_entropy(y_hat, y_target, size_average=True)
         else:
-            predL = Variable(torch.zeros(1)).cuda() if self._is_on_cuda() else Variable(torch.zeros(1))
+            predL = torch.tensor(0., device=self._device())
 
         ###-----Distilliation loss-----###
         if scores is not None:
             n_classes_to_consider = y_hat.size(1)  #--> zeroes will be added to [scores] to make its size match [y_hat]
-            distilL = utils.loss_fn_kd(
-                scores=y_hat[:, :n_classes_to_consider], target_scores=scores, T=self.KD_temp, cuda=self._is_on_cuda()
-            )
+            distilL = utils.loss_fn_kd(scores=y_hat[:, :n_classes_to_consider], target_scores=scores, T=self.KD_temp)
         else:
-            distilL = Variable(torch.zeros(1)).cuda() if self._is_on_cuda() else Variable(torch.zeros(1))
+            distilL = torch.tensor(0., device=self._device())
 
         # Return a tuple of the calculated losses
         return reconL, variatL, predL, distilL
@@ -220,11 +217,11 @@ class AutoEncoder(Replayer):
     def train_a_batch(self, x, y, x_=None, y_=None, scores_=None, rnt=0.5, active_classes=None, task=1):
         '''Train model for one batch ([x],[y]), possibly supplemented with replayed data ([x_],[y_]).
 
-        [x]               <Variable> batch of inputs (could be None, in which case only 'replayed' data is used)
-        [y]               <Variable> batch of corresponding labels
-        [x_]              None or (<list> of) <Variable> batch of replayed inputs
-        [y_]              None or (<list> of) <Variable> batch of corresponding "replayed" labels
-        [scores_]         None or (<list> of) <Variable> 2Dtensor:[batch]x[classes] predicted "scores"/"logits" for [x_]
+        [x]               <tensor> batch of inputs (could be None, in which case only 'replayed' data is used)
+        [y]               <tensor> batch of corresponding labels
+        [x_]              None or (<list> of) <tensor> batch of replayed inputs
+        [y_]              None or (<list> of) <tensor> batch of corresponding "replayed" labels
+        [scores_]         None or (<list> of) <tensor> 2Dtensor:[batch]x[classes] predicted "scores"/"logits" for [x_]
         [rnt]             <number> in [0,1], relative importance of new task
         [active_classes]  None or (<list> of) <list> with "active" classes'''
 
@@ -248,7 +245,7 @@ class AutoEncoder(Replayer):
             # Calculate training-precision
             if y is not None:
                 _, predicted = y_hat.max(1)
-                precision = (y == predicted).sum().data[0] / x.size(0)
+                precision = (y == predicted).sum().item() / x.size(0)
 
         ##--(2)-- REPLAYED DATA --##
         if x_ is not None:
@@ -307,14 +304,14 @@ class AutoEncoder(Replayer):
 
         # Return the dictionary with different training-loss split in categories
         return {
-            'loss_total': loss_total.data[0], 'precision': precision,
-            'recon': reconL.data[0] if x is not None else 0,
-            'variat': variatL.data[0] if x is not None else 0,
-            'pred': predL.data[0] if x is not None else 0,
-            'recon_r': sum(reconL_r).data[0]/n_replays if x_ is not None else 0,
-            'variat_r': sum(variatL_r).data[0]/n_replays if x_ is not None else 0,
-            'pred_r': sum(predL_r).data[0]/n_replays if (x_ is not None and predL_r[0] is not None) else 0,
-            'distil_r': sum(distilL_r).data[0]/n_replays if (x_ is not None and distilL_r[0] is not None) else 0,
+            'loss_total': loss_total.item(), 'precision': precision,
+            'recon': reconL.item() if x is not None else 0,
+            'variat': variatL.item() if x is not None else 0,
+            'pred': predL.item() if x is not None else 0,
+            'recon_r': sum(reconL_r).item()/n_replays if x_ is not None else 0,
+            'variat_r': sum(variatL_r).item()/n_replays if x_ is not None else 0,
+            'pred_r': sum(predL_r).item()/n_replays if (x_ is not None and predL_r[0] is not None) else 0,
+            'distil_r': sum(distilL_r).item()/n_replays if (x_ is not None and distilL_r[0] is not None) else 0,
         }
 
 

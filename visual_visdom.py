@@ -1,5 +1,4 @@
 import numpy as np
-from torch.cuda import FloatTensor as CUDATensor
 from visdom import Visdom
 
 
@@ -12,14 +11,8 @@ def _vis(env='main'):
 
 def visualize_images(tensor, name, env='main', w=400, h=400):
     '''Plot images contained in [tensor] to visdom-server.'''
-
-    # If needed, set tensor back to cpu
-    tensor = tensor.cpu() if isinstance(tensor, CUDATensor) else tensor
-
-    # Plot the images
-    _WINDOW_CASH[name] = _vis(env).images(
-        tensor.numpy(), win=_WINDOW_CASH.get(name), nrow=8, opts=dict(title=name, width=w, height=h)
-    )
+    options = dict(title=name, width=w, height=h)
+    _WINDOW_CASH[name] = _vis(env).images(tensor.cpu().numpy(), win=_WINDOW_CASH.get(name), nrow=8, opts=options)
 
 
 def visualize_scalars(scalars, names, title, iteration, env='main', ylabel=None):
@@ -28,8 +21,7 @@ def visualize_scalars(scalars, names, title, iteration, env='main', ylabel=None)
 
     # Convert scalar tensors to numpy arrays.
     scalars, names = list(scalars), list(names)
-    scalars = [s.cpu() if isinstance(s, CUDATensor) else s for s in scalars]
-    scalars = [s.numpy() if hasattr(s, 'numpy') else np.array([s]) for s in scalars]
+    scalars = [s.cpu().numpy() if (hasattr(s, 'cpu') and hasattr(s.cpu(), 'numpy')) else np.array([s]) for s in scalars]
     num = len(scalars)
     X = np.column_stack(np.array([iteration] * num)) if (num>1) else np.array([iteration] * num)
     Y = np.column_stack(scalars) if (num>1) else scalars[0]
@@ -43,6 +35,7 @@ def visualize_scalars(scalars, names, title, iteration, env='main', ylabel=None)
 
     # Update plot (or start new one if not yet present)
     if title in _WINDOW_CASH:
-        _vis(env).updateTrace(X=X, Y=Y, win=_WINDOW_CASH[title], opts=options)
+        #_vis(env).updateTrace(X=X, Y=Y, win=_WINDOW_CASH[title], opts=options)          # for older versions of visdom
+        _vis(env).line(X=X, Y=Y, win=_WINDOW_CASH[title], opts=options, update='append') # for newer versions of visdom
     else:
         _WINDOW_CASH[title] = _vis(env).line(X=X, Y=Y, opts=options)

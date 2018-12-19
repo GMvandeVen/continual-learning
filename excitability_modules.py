@@ -2,7 +2,6 @@ import math
 import torch
 from torch import nn
 from torch.nn.parameter import Parameter
-from torch.autograd import Variable
 
 
 def linearExcitability(input, weight, excitability=None, bias=None):
@@ -60,7 +59,7 @@ class LinearExcitability(nn.Module):
             self.register_parameter('bias', None)
         if excit_buffer:
             buffer = torch.Tensor(out_features).uniform_(1,1)
-            self.register_buffer("excit_buffer", buffer)       # NOTE: buffers should not contain Variables!
+            self.register_buffer("excit_buffer", buffer)
         else:
             self.register_buffer("excit_buffer", None)
         self.reset_parameters()
@@ -81,9 +80,9 @@ class LinearExcitability(nn.Module):
         if self.excit_buffer is None:
             excitability = self.excitability
         elif self.excitability is None:
-            excitability = Variable(self.excit_buffer)
+            excitability = self.excit_buffer
         else:
-            excitability = self.excitability*Variable(self.excit_buffer)
+            excitability = self.excitability*self.excit_buffer
         return linearExcitability(input, self.weight, excitability, self.bias)
 
     def __repr__(self):

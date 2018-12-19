@@ -19,9 +19,11 @@ class Replayer(nn.Module, metaclass=abc.ABCMeta):
         #--> self.[optim_list]   <list>, if optimizer should be reset after each task, provide list of required <dicts>
 
         # Replay: temperature for distillation loss (and whether it should be used)
-        self.binary_loss = False
         self.replay_targets = "hard"  # hard|soft
         self.KD_temp = 2.
+
+    def _device(self):
+        return next(self.parameters()).device
 
     def _is_on_cuda(self):
         return next(self.parameters()).is_cuda

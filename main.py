@@ -76,10 +76,10 @@ eval_params = parser.add_argument_group('Evaluation Parameters')
 eval_params.add_argument('--pdf', action='store_true', help="generate pdf with results")
 eval_params.add_argument('--visdom', action='store_true', help="use visdom for on-the-fly plots")
 eval_params.add_argument('--log-per-task', action='store_true', help="set all visdom-logs to [iters]")
-eval_params.add_argument('--loss-log', type=int, default=30, metavar="N", help="# iters after which to plot loss")
-eval_params.add_argument('--prec-log', type=int, default=50, metavar="N", help="# iters after which to plot precision")
+eval_params.add_argument('--loss-log', type=int, default=200, metavar="N", help="# iters after which to plot loss")
+eval_params.add_argument('--prec-log', type=int, default=200, metavar="N", help="# iters after which to plot precision")
 eval_params.add_argument('--prec-n', type=int, default=1024, help="# samples for evaluating solver's precision")
-eval_params.add_argument('--sample-log', type=int, default=200, metavar="N", help="# iters after which to plot samples")
+eval_params.add_argument('--sample-log', type=int, default=500, metavar="N", help="# iters after which to plot samples")
 eval_params.add_argument('--sample-n', type=int, default=64, help="# images to show")
 
 
@@ -100,7 +100,10 @@ def run(args):
         raise ValueError("'XdG' only works for the incremental task learning scenario.")
     # -if EWC, SI or XdG is selected together with 'feedback', give error
     if args.feedback and (args.ewc or args.si or args.gating_prop>0):
-        raise NotImplementedError("EWC, SI and XdG not supported with feedback connections.")
+        raise NotImplementedError("EWC, SI and XdG are not supported with feedback connections.")
+    # -if XdG is selected together with replay of any kind, give error
+    if args.gating_prop>0 and (not args.replay=="none"):
+        raise NotImplementedError("XdG is not supported with '{}' replay.".format(args.replay))
     # -create plots- and results-directories if needed
     if not os.path.isdir(args.r_dir):
         os.mkdir(args.r_dir)
@@ -109,6 +112,7 @@ def run(args):
 
     # Use cuda?
     cuda = torch.cuda.is_available() and args.cuda
+    device = torch.device("cuda" if cuda else "cpu")
 
     # Set random seeds
     np.random.seed(args.seed)
@@ -142,14 +146,14 @@ def run(args):
             image_size=config['size'], image_channels=config['channels'], classes=config['classes'],
             fc_layers=args.fc_lay, fc_units=args.fc_units, z_dim=args.z_dim,
             fc_drop=args.fc_drop, fc_bn=True if args.fc_bn=="yes" else False, fc_nl=args.fc_nl,
-        )
+        ).to(device)
         model.lamda_pl = 1. #--> to make that this VAE is also trained to classify
     else:
         model = Classifier(
             image_size=config['size'], image_channels=config['channels'], classes=config['classes'],
             fc_layers=args.fc_lay, fc_units=args.fc_units, fc_drop=args.fc_drop, fc_nl=args.fc_nl,
             fc_bn=True if args.fc_bn=="yes" else False, excit_buffer=True if args.gating_prop>0 else False,
-        )
+        ).to(device)
 
     # Define optimizer (only include parameters that "requires_grad")
     model.optim_list = [{'params': filter(lambda p: p.requires_grad, model.parameters()), 'lr': args.lr}]
@@ -165,9 +169,6 @@ def run(args):
     if args.feedback:
         model.recon_criterion = nn.BCELoss(size_average=True)
 
-    # Use cuda if needed
-    if cuda:
-        model.cuda()
 
     #-------------------------------------------------------------------------------------------------#
 
@@ -223,7 +224,7 @@ def run(args):
             image_size=config['size'], image_channels=config['channels'],
             fc_layers=args.g_fc_lay, fc_units=args.g_fc_uni, z_dim=args.z_dim, classes=config['classes'],
             fc_drop=args.fc_drop, fc_bn=True if args.fc_bn=="yes" else False, fc_nl=args.fc_nl,
-        )
+        ).to(device)
         # -set optimizer(s)
         generator.optim_list = [{'params': filter(lambda p: p.requires_grad, generator.parameters()), 'lr': args.lr}]
         generator.optim_type = args.optimizer
@@ -236,9 +237,6 @@ def run(args):
     else:
         generator = None
 
-    # Use cuda if needed
-    if cuda and generator is not None:
-        generator.cuda()
 
     #-------------------------------------------------------------------------------------------------#
 
@@ -348,7 +346,7 @@ def run(args):
     #----- EVALUATION -----#
     #----------------------#
 
-    print("\n\n--> Evaluation:")
+    print('\n\n--> Evaluation ("incremental {} learning scenario"):'.format(args.scenario))
 
     # Generation (plot in pdf)
     if (pp is not None) and train_gen:
@@ -379,7 +377,7 @@ def run(args):
     for i in range(args.tasks):
         print(" - Task {}: {:.4f}".format(i + 1, precs[i]))
     average_precs = sum(precs) / args.tasks
-    print('=> average precision over all {} tasks: {:.4f}'.format(args.tasks, average_precs))
+    print('=> average precision over all {} tasks: {:.4f}\n'.format(args.tasks, average_precs))
 
 
     #-------------------------------------------------------------------------------------------------#

@@ -3,7 +3,6 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torch.autograd import Variable
 import utils
 
 
@@ -32,6 +31,9 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         self.emp_FI = False     #-> if True, use provided labels to calculate FI ("empirical FI"); else predicted labels
         self.EWC_task_count = 0 #-> keeps track of number of quadratic loss terms (for "offline EWC")
 
+    def _device(self):
+        return next(self.parameters()).device
+
     def _is_on_cuda(self):
         return next(self.parameters()).is_cuda
 
@@ -48,7 +50,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         [task]   <int>, starting from 1'''
 
         assert self.mask_dict is not None
-        torchType = next(self.parameters()).data
+        torchType = next(self.parameters()).detach()
 
         # Loop over all buffers for which a task-specific mask has been specified
         for i,excit_buffer in enumerate(self.excit_buffer_list):
@@ -58,7 +60,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
 
     def reset_XdGmask(self):
         '''Remove task-specific mask, by setting all "excit-buffers" to 1.'''
-        torchType = next(self.parameters()).data
+        torchType = next(self.parameters()).detach()
         for excit_buffer in self.excit_buffer_list:
             gating_mask = np.repeat(1., len(excit_buffer))  # -> define "unit mask" (i.e., no masking at all)
             excit_buffer.set_(torchType.new(gating_mask))   # -> apply this unit mask
@@ -77,7 +79,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         for n, p in self.named_parameters():
             if p.requires_grad:
                 n = n.replace('.', '__')
-                est_fisher_info[n] = p.data.clone().zero_()
+                est_fisher_info[n] = p.detach().clone().zero_()
 
         # Set model to evaluation mode
         mode = self.training
@@ -93,7 +95,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                 if index >= self.fisher_n:
                     break
             # run forward pass of model
-            x = Variable(x).cuda() if self._is_on_cuda() else Variable(x)
+            x = x.to(self._device())
             output = self(x) if allowed_classes is None else self(x)[:, allowed_classes]
             if self.emp_FI:
                 # -use provided label to calculate loglikelihood --> "empirical Fisher":
@@ -101,7 +103,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                 if allowed_classes is not None:
                     label = [int(np.where(i == allowed_classes)[0][0]) for i in label.numpy()]
                     label = torch.LongTensor(label)
-                label = Variable(label).cuda() if self._is_on_cuda() else Variable(label)
+                label = label.to(self._device())
             else:
                 # -use predicted label to calculate loglikelihood:
                 label = output.max(1)[1]
@@ -117,7 +119,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                 if p.requires_grad:
                     n = n.replace('.', '__')
                     if p.grad is not None:
-                        est_fisher_info[n] += p.grad.data ** 2
+                        est_fisher_info[n] += p.grad.detach() ** 2
 
         # Normalize by sample size used for estimation
         est_fisher_info = {n: p/index for n, p in est_fisher_info.items()}
@@ -128,7 +130,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                 n = n.replace('.', '__')
                 # -mode (=MAP parameter estimate)
                 self.register_buffer('{}_EWC_prev_task{}'.format(n, "" if self.online else self.EWC_task_count+1),
-                                     p.data.clone())
+                                     p.detach().clone())
                 # -precision (approximated by diagonal Fisher Information matrix)
                 if self.online and self.EWC_task_count==1:
                     existing_values = getattr(self, '{}_EWC_estimated_fisher'.format(n))
@@ -143,7 +145,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         self.train(mode=mode)
 
 
-    def ewc_loss(self, cuda=False):
+    def ewc_loss(self):
         '''Calculate EWC-loss.'''
         if self.EWC_task_count>0:
             losses = []
@@ -153,8 +155,8 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                     if p.requires_grad:
                         # Retrieve stored mode (MAP estimate) and precision (Fisher Information matrix)
                         n = n.replace('.', '__')
-                        mean = Variable(getattr(self, '{}_EWC_prev_task{}'.format(n, "" if self.online else task)))
-                        fisher = Variable(getattr(self, '{}_EWC_estimated_fisher{}'.format(n, "" if self.online else task)))
+                        mean = getattr(self, '{}_EWC_prev_task{}'.format(n, "" if self.online else task))
+                        fisher = getattr(self, '{}_EWC_estimated_fisher{}'.format(n, "" if self.online else task))
                         # If "online EWC", apply decay-term to the running sum of the Fisher Information matrices
                         fisher = self.gamma*fisher if self.online else fisher
                         # Calculate EWC-loss
@@ -163,7 +165,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
             return (1./2)*sum(losses)
         else:
             # EWC-loss is 0 if there are no stored mode and precision yet
-            return Variable(torch.zeros(1)).cuda() if cuda else Variable(torch.zeros(1))
+            return torch.tensor(0., device=self._device())
 
 
     #------------- "Synaptic Intelligence Synapses"-specifc functions -------------#
@@ -181,13 +183,13 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
 
                 # Find/calculate new values for quadratic penalty on parameters
                 p_prev = getattr(self, '{}_SI_prev_task'.format(n))
-                p_current = p.data.clone()
+                p_current = p.detach().clone()
                 p_change = p_current - p_prev
                 omega_add = W[n]/(p_change**2 + epsilon)
                 try:
                     omega = getattr(self, '{}_SI_omega'.format(n))
                 except AttributeError:
-                    omega = p.data.clone().zero_()
+                    omega = p.detach().clone().zero_()
                 omega_new = omega + omega_add
 
                 # Store these new values in the model
@@ -195,7 +197,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                 self.register_buffer('{}_SI_omega'.format(n), omega_new)
 
 
-    def surrogate_loss(self, cuda=False):
+    def surrogate_loss(self):
         '''Calculate SI's surrogate loss.'''
         try:
             losses = []
@@ -203,11 +205,11 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                 if p.requires_grad:
                     # Retrieve previous parameter values and their normalized path integral (i.e., omega)
                     n = n.replace('.', '__')
-                    prev_values = Variable(getattr(self, '{}_SI_prev_task'.format(n)))
-                    omega = Variable(getattr(self, '{}_SI_omega'.format(n)))
+                    prev_values = getattr(self, '{}_SI_prev_task'.format(n))
+                    omega = getattr(self, '{}_SI_omega'.format(n))
                     # Calculate SI's surrogate loss, sum over all parameters
                     losses.append((omega * (p-prev_values)**2).sum())
             return sum(losses)
         except AttributeError:
             # SI-loss is 0 if there is no stored omega yet
-            return Variable(torch.zeros(1)).cuda() if cuda else Variable(torch.zeros(1))
+            return torch.tensor(0., device=self._device())

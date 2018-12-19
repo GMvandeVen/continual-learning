@@ -1,5 +1,5 @@
+import torch
 from torch import optim
-from torch.autograd import Variable
 from torch.utils.data import ConcatDataset
 import numpy as np
 import tqdm
@@ -31,6 +31,7 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class", classe
 
     # Use cuda?
     cuda = model._is_on_cuda()
+    device = model._device()
 
     # Initiate possible sources for replay (no replay for 1st task)
     previous_model = previous_scholar = previous_datasets = None
@@ -119,12 +120,9 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class", classe
             if replay_mode=="offline" and scenario=="task":
                 x = y = None
             else:
-                # Sample training data of current task, wrap them in (cuda-)Variables
-                x, y = next(data_loader)
-                x = Variable(x).cuda() if cuda else Variable(x)
-                if scenario == "task":
-                    y = y - classes_per_task*(task-1) # -> incremental task learning: adjust y-targets to 'active range'
-                y = Variable(y).cuda() if cuda else Variable(y)
+                x, y = next(data_loader)                                    #--> sample training data of current task
+                y = y-classes_per_task*(task-1) if scenario=="task" else y  #--> ITL: adjust y-targets to 'active range'
+                x, y = x.to(device), y.to(device)                           #--> transfer them to correct device
 
 
             #####-----REPLAYED BATCH-----#####
@@ -140,11 +138,10 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class", classe
                     y_ = y if ((model.replay_targets=="hard") or visualize) else None
                     # Get predicted "logits"/"scores" on replayed data (from previous model)
                     if (model.replay_targets=="soft") or visualize:
-                        if scenario == "domain":
-                            scores_ = Variable(previous_model(x_).data)
-                        elif scenario == "class":
-                            scores_ = Variable(previous_model(x_)[:, :(classes_per_task * (task - 1))].data)
-                            # --> zero probabilities will be added in the [utils.loss_fn_kd]-function
+                        with torch.no_grad():
+                            scores_ = previous_model(x_)
+                        scores_ = scores_[:, :(classes_per_task * (task - 1))] if scenario=="class" else scores_
+                        # --> ICL: zero probabilities will be added in the [utils.loss_fn_kd]-function
                 else:
                     if model.replay_targets=="hard":
                         raise NotImplementedError(
@@ -158,9 +155,9 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class", classe
                     if (model.replay_targets=="soft") or visualize:
                         scores_ = list()
                         for task_id in range(task-1):
-                            scores_temp = previous_model(x_[task_id])
-                            scores_temp = scores_temp[:, (classes_per_task*task_id):(classes_per_task*(task_id+1))]
-                            scores_.append(Variable(scores_temp.data))
+                            with torch.no_grad():
+                                scores_temp = previous_model(x_[task_id])
+                            scores_.append(scores_temp[:, (classes_per_task*task_id):(classes_per_task*(task_id+1))])
 
             ##-->> Exact Replay <<--##
             if exact_replay:
@@ -168,18 +165,14 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class", classe
                 if not scenario=="task":
                     # Sample replayed training data, wrap in (cuda-)Variables
                     x_, y_ = next(data_loader_previous)
-                    x_ = Variable(x_).cuda() if cuda else Variable(x_)
-                    if (model.replay_targets=="hard") or visualize:
-                        y_ = Variable(y_).cuda() if cuda else Variable(y_)
-                    else:
-                        y_ = None
+                    x_ = x_.to(device)
+                    y_ = y_.to(device) if (model.replay_targets=="hard") or visualize else None
                     # Get predicted "logits"/"scores" on replayed data (from previous model)
                     if (model.replay_targets=="soft") or visualize:
-                        if scenario=="domain":
-                            scores_ = Variable(previous_model(x_).data)
-                        elif scenario=="class":
-                            scores_ = Variable(previous_model(x_)[:, :(classes_per_task*(task-1))].data)
-                            #--> zero probabilities will be added in the [utils.loss_fn_kd]-function
+                        with torch.no_grad():
+                            scores_ = previous_model(x_)
+                        scores_ = scores_[:, :(classes_per_task * (task - 1))] if scenario=="class" else scores_
+                        # --> ICL: zero probabilities will be added in the [utils.loss_fn_kd]-function
                 else:
                     # Sample replayed training data, wrap in (cuda-)Variables and store in lists
                     x_ = list()
@@ -187,20 +180,20 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class", classe
                     up_to_task = task if replay_mode=="offline" else task-1
                     for task_id in range(up_to_task):
                         x_temp, y_temp = next(data_loader_previous[task_id])
-                        x_.append(Variable(x_temp).cuda() if cuda else Variable(x_temp))
+                        x_.append(x_temp.to(device))
                         # -only keep [y_] if required (as otherwise unnecessary computations will be done)
                         if (model.replay_targets == "hard") or visualize:
                             y_temp = y_temp - (classes_per_task*task_id) #-> adjust y-targets to 'active range'
-                            y_.append(Variable(y_temp).cuda() if cuda else Variable(y_temp))
+                            y_.append(y_temp.to(device))
                         else:
                             y_.append(None)
                     # Get predicted "logits" on replayed data (from previous model)
                     if ((model.replay_targets=="soft") or visualize) and (previous_model is not None):
                         scores_ = list()
                         for task_id in range(up_to_task):
-                            scores_temp = previous_model(x_[task_id])
-                            scores_temp = scores_temp[:, (classes_per_task*task_id):(classes_per_task*(task_id+1))]
-                            scores_.append(Variable(scores_temp.data))
+                            with torch.no_grad():
+                                scores_temp = previous_model(x_[task_id])
+                            scores_.append(scores_temp[:, (classes_per_task*task_id):(classes_per_task*(task_id+1))])
 
             ##-->> Generative Replay <<--##
             if generative_replay:
@@ -211,9 +204,6 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class", classe
                     sample_model = previous_model if generator is None else previous_scholar
                     x_, y_, scores_ = sample_model.sample(batch_size, allowed_predictions=allowed_predictions,
                                                           return_scores=True)
-                    x_ = Variable(x_).cuda() if cuda else Variable(x_)
-                    y_ = Variable(y_).cuda() if cuda else Variable(y_)
-                    scores_ = Variable(scores_).cuda() if cuda else Variable(scores_)
                     # -only keep predicted y/scores if required (as otherwise unnecessary computations will be done)
                     y_ = y_ if ((model.replay_targets=="hard") or visualize) else None
                     scores_ = scores_ if ((model.replay_targets=="soft") or visualize) else None
@@ -231,17 +221,10 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class", classe
                             batch_size_replay, allowed_predictions=allowed_pred_list[prev_task_id-1],
                             return_scores=True,
                         )
-                        x_.append(Variable(x_temp).cuda() if cuda else Variable(x_temp))
-                        # -only keep [y_] if required (as otherwise unnecessary computations will be done)
-                        if (model.replay_targets == "hard") or visualize:
-                            y_.append(Variable(y_temp).cuda() if cuda else Variable(y_temp))
-                        else:
-                            y_.append(None)
-                        # -only keep [scores_] if required (as otherwise unnecessary computations will be done)
-                        if (model.replay_targets=="soft") or visualize:
-                            scores_.append(Variable(scores_temp).cuda() if cuda else Variable(scores_temp))
-                        else:
-                            scores_.append(None)
+                        x_.append(x_temp)
+                        # -only keep [y_] / [scores_] if required (as otherwise unnecessary computations will be done)
+                        y_.append(y_temp if (model.replay_targets=="hard" or visualize) else None)
+                        scores_.append(scores_temp if (model.replay_targets=="soft" or visualize) else None)
 
 
             # Find [active_classes]
@@ -264,8 +247,8 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class", classe
                     if p.requires_grad:
                         n = n.replace('.', '__')
                         if p.grad is not None:
-                            W[n].add_(-p.grad.data*(p.data-p_old[n]))
-                        p_old[n] = p.data.clone()
+                            W[n].add_(-p.grad*(p.detach()-p_old[n]))
+                        p_old[n] = p.detach().clone()
 
             # Fire callbacks (for visualization of training-progress / evaluating performance after each task)
             for loss_cb in loss_cbs:
@@ -311,17 +294,16 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class", classe
                                                                           collate_fn=collate_fn, drop_last=True))
                         iters_left_previous = len(data_loader_previous)
 
-                # Sample training data of current task, wrap in (cuda-)Variables
+                # Sample training data of current task
                 x, _ = next(data_loader)
-                x = Variable(x).cuda() if cuda else Variable(x)
+                x = x.to(device)
 
-                # Sample replayed training data, wrap them (cuda-)Variables
+                # Sample replayed training data
                 if exact_replay:
                     x_, _ = next(data_loader_previous)
-                    x_ = Variable(x_).cuda() if cuda else Variable(x_)
+                    x_ = x_.to(device)
                 elif generative_replay:
                     x_, _ = previous_scholar.sample(batch_size)
-                    x_ = Variable(x_).cuda() if cuda else Variable(x_)
                 elif current_replay:
                     x_ = x
                 else:

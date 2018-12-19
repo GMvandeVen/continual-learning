@@ -4,9 +4,9 @@ This is a PyTorch implementation of the continual learning experiments described
 for continual learning, [arXiv preprint](https://arxiv.org/abs/1809.10635)
 
 ## Requirements
-The code has been tested with:
-* `pytorch 0.3.1`
-* `torchvision 0.2.0`
+The current version of the code has been tested with:
+* `pytorch 0.4.1`
+* `torchvision 0.2.1`
 
 ## Running the experiments
 Individual experiments can be run with `main.py`. Main options are:

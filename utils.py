@@ -5,7 +5,6 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
 from torch.nn import functional as F
-from torch.autograd import Variable
 from torchvision import transforms
 import copy
 import data
@@ -16,11 +15,13 @@ from vae_models import AutoEncoder
 ## Loss function ##
 ###################
 
-def loss_fn_kd(scores, target_scores, T=2., cuda=False):
+def loss_fn_kd(scores, target_scores, T=2.):
     """Compute knowledge-distillation (KD) loss given [scores] and [target_scores].
 
-    Both [scores] and [target_scores] should be tensor-wrapped Variables, although [target_scores] should be repackaged.
+    Both [scores] and [target_scores] should be tensors, although [target_scores] should be repackaged.
     'Hyperparameter': temperature"""
+
+    device = scores.device
 
     log_scores_norm = F.log_softmax(scores / T, dim=1)
     targets_norm = F.softmax(target_scores / T, dim=1)
@@ -30,8 +31,8 @@ def loss_fn_kd(scores, target_scores, T=2., cuda=False):
     if n>target_scores.size(1):
         n_batch = scores.size(0)
         zeros_to_add = torch.zeros(n_batch, n-target_scores.size(1))
-        zeros_to_add = zeros_to_add.cuda() if cuda else zeros_to_add
-        targets_norm = Variable(torch.cat([targets_norm.data, zeros_to_add], dim=1))
+        zeros_to_add = zeros_to_add.to(device)
+        targets_norm = torch.cat([targets_norm.detach(), zeros_to_add], dim=1)
 
     # Calculate distillation loss (see e.g., Li and Hoiem, 2017)
     KD_loss_unnorm = (-targets_norm * log_scores_norm).mean()

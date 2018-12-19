@@ -50,11 +50,11 @@ class Classifier(ContinualLearner, Replayer):
     def train_a_batch(self, x, y, x_=None, y_=None, scores_=None, rnt=0.5, active_classes=None, task=1):
         '''Train model for one batch ([x],[y]), possibly supplemented with replayed data ([x_],[y_/scores_]).
 
-        [x]               <Variable> batch of inputs (could be None, in which case only 'replayed' data is used)
-        [y]               <Variable> batch of corresponding labels
-        [x_]              None or (<list> of) <Variable> batch of replayed inputs
-        [y_]              None or (<list> of) <Variable> batch of corresponding "replayed" labels
-        [scores_]         None or (<list> of) <Variable> 2Dtensor:[batch]x[classes] predicted "scores"/"logits" for [x_]
+        [x]               <tensor> batch of inputs (could be None, in which case only 'replayed' data is used)
+        [y]               <tensor> batch of corresponding labels
+        [x_]              None or (<list> of) <tensor> batch of replayed inputs
+        [y_]              None or (<list> of) <tensor> batch of corresponding "replayed" labels
+        [scores_]         None or (<list> of) <tensor> 2Dtensor:[batch]x[classes] predicted "scores"/"logits" for [x_]
         [rnt]             <number> in [0,1], relative importance of new task
         [active_classes]  None or (<list> of) <list> with "active" classes'''
 
@@ -80,7 +80,7 @@ class Classifier(ContinualLearner, Replayer):
             predL = None if y is None else F.cross_entropy(y_hat, y)
 
             # Calculate training-precision
-            precision = None if y is None else (y == y_hat.max(1)[1]).sum().data[0] / x.size(0)
+            precision = None if y is None else (y == y_hat.max(1)[1]).sum().item() / x.size(0)
         else:
             precision = predL = None
             # -> it's possible there is only "replay" [i.e., for offline with incremental task learning]
@@ -104,9 +104,6 @@ class Classifier(ContinualLearner, Replayer):
 
             # Loop to perform each replay
             for replay_id in range(n_replays):
-                # If requested, apply correct mask for each new replay
-                if self.mask_dict is not None:
-                    self.apply_XdGmask(task=replay_id+1)
 
                 # Run model
                 y_hat = self(x_[replay_id])
@@ -119,8 +116,7 @@ class Classifier(ContinualLearner, Replayer):
                     predL_r[replay_id] = F.cross_entropy(y_hat, y_[replay_id])
                 if (scores_ is not None) and (scores_[replay_id] is not None):
                     distilL_r[replay_id] = utils.loss_fn_kd(scores=y_hat,
-                                                            target_scores=scores_[replay_id], T=self.KD_temp,
-                                                            cuda=self._is_on_cuda())
+                                                            target_scores=scores_[replay_id], T=self.KD_temp)
                 # Weigh losses
                 if self.replay_targets=="hard":
                     loss_replay[replay_id] = predL_r[replay_id]
@@ -140,12 +136,12 @@ class Classifier(ContinualLearner, Replayer):
         ##--(3)-- ALLOCATION LOSSES --##
 
         # Add SI-loss (Zenke et al., 2017)
-        surrogate_loss = self.surrogate_loss(cuda=self._is_on_cuda())
+        surrogate_loss = self.surrogate_loss()
         if self.si_c>0:
             loss_total += self.si_c * surrogate_loss
 
         # Add EWC-loss
-        ewc_loss = self.ewc_loss(cuda=self._is_on_cuda())
+        ewc_loss = self.ewc_loss()
         if self.ewc_lambda>0:
             loss_total += self.ewc_lambda * ewc_loss
 
@@ -159,11 +155,11 @@ class Classifier(ContinualLearner, Replayer):
 
         # Return the dictionary with different training-loss split in categories
         return {
-            'loss_total': loss_total.data[0],
-            'pred': predL.data[0] if predL is not None else 0,
-            'pred_r': sum(predL_r).data[0]/n_replays if (x_ is not None and predL_r[0] is not None) else 0,
-            'distil_r': sum(distilL_r).data[0]/n_replays if (x_ is not None and distilL_r[0] is not None) else 0,
-            'ewc': ewc_loss.data[0], 'si_loss': surrogate_loss.data[0],
+            'loss_total': loss_total.item(),
+            'pred': predL.item() if predL is not None else 0,
+            'pred_r': sum(predL_r).item()/n_replays if (x_ is not None and predL_r[0] is not None) else 0,
+            'distil_r': sum(distilL_r).item()/n_replays if (x_ is not None and distilL_r[0] is not None) else 0,
+            'ewc': ewc_loss.item(), 'si_loss': surrogate_loss.item(),
             'precision': precision if precision is not None else 0.,
         }
 

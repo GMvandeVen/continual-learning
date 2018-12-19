@@ -1,5 +1,4 @@
 import torch
-from torch.autograd import Variable
 import visual_visdom
 import visual_plt
 import utils
@@ -36,14 +35,13 @@ def validate(model, dataset, batch_size=128, test_size=1024, verbose=True, colla
             if total_tested >= test_size:
                 break
         # -evaluate model (if requested, only on [allowed_classes])
-        data = Variable(data).cuda() if model._is_on_cuda() else Variable(data)
-        labels = Variable(labels).cuda() if model._is_on_cuda() else Variable(labels)
-        if (allowed_classes is not None):
-            labels = labels - allowed_classes[0]
-        scores = model(data) if (allowed_classes is None) else model(data)[:, allowed_classes]
+        data, labels = data.to(model._device()), labels.to(model._device())
+        labels = labels - allowed_classes[0] if (allowed_classes is not None) else labels
+        with torch.no_grad():
+            scores = model(data) if (allowed_classes is None) else model(data)[:, allowed_classes]
         _, predicted = torch.max(scores, 1)
         # -update statistics
-        total_correct += (predicted == labels).sum().data[0]
+        total_correct += (predicted == labels).sum().item()
         total_tested += len(data)
     precision = total_correct / total_tested
 
@@ -160,26 +158,25 @@ def show_samples(model, config, pdf=None, visdom=None, size=32, title="Generated
 def show_reconstruction(model, dataset, config, pdf=None, visdom=None, size=32, task=None, collate_fn=None):
     '''Plot reconstructed examples by an auto-encoder [model] on [dataset], in [pdf] and/or in [visdom].'''
 
-    cuda = model._is_on_cuda()
-
     # Set model to evaluation-mode
     mode = model.training
     model.eval()
 
     # Get data
-    data_loader = utils.get_data_loader(dataset, size, cuda=cuda, collate_fn=collate_fn)
+    data_loader = utils.get_data_loader(dataset, size, cuda=model._is_on_cuda(), collate_fn=collate_fn)
     (data, labels) = next(iter(data_loader))
+    data, labels = data.to(model._device()), labels.to(model._device())
 
     # Evaluate model
-    data = Variable(data, volatile=True).cuda() if cuda else Variable(data, volatile=True)
-    recon_batch, y_hat, mu, logvar, z = model(data, full=True)
+    with torch.no_grad():
+        recon_batch, y_hat, mu, logvar, z = model(data, full=True)
 
     # Plot original and reconstructed images
     comparison = torch.cat(
         [data.view(-1, config['channels'], config['size'], config['size'])[:size],
          recon_batch.view(-1, config['channels'], config['size'], config['size'])[:size]]
     ).cpu()
-    image_tensor = comparison.data.view(-1, config['channels'], config['size'], config['size'])
+    image_tensor = comparison.view(-1, config['channels'], config['size'], config['size'])
     if pdf is not None:
         task_stm = "" if task is None else " (task {})".format(task)
         visual_plt.plot_images_from_tensor(
