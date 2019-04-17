@@ -1,6 +1,6 @@
 # Continual Learning
 This is a PyTorch implementation of the continual learning experiments described in the following papers:
-* Three scenarios for continual learning ([link](https://arxiv.org/abs/))
+* Three scenarios for continual learning ([link](https://arxiv.org/abs/1904.07734))
 * Generative replay with feedback connections as a general strategy 
 for continual learning ([link](https://arxiv.org/abs/1809.10635))
 
@@ -33,8 +33,8 @@ For information on further options: `./main.py -h`.
 
 ## Running comparisons from the papers
 #### "Three CL scenarios"-paper
-[This paper](https://arxiv.org/abs/) describes three scenarios for continual learning (Task-IL, Domain-IL & Class-IL)
-and provides an extensive comparion of recently proposed continual learning methods. It uses the permuted and
+[This paper](https://arxiv.org/abs/1904.07734) describes three scenarios for continual learning (Task-IL, Domain-IL &
+Class-IL) and provides an extensive comparion of recently proposed continual learning methods. It uses the permuted and
 split MNIST task protocols, with both performed according to all three scenarios.
 
 A comparison of all methods included in this paper can be run with `_compare.py`. The
@@ -73,9 +73,9 @@ For more information on `visdom` see <https://github.com/facebookresearch/visdom
 Please consider citing our papers if you use this code in your research:
 ```
 @article{vandeven2018three,
-  title={Three continual learning scenarios},
+  title={Three scenarios for continual learning},
   author={van de Ven, Gido M and Tolias, Andreas S},
-  journal={arXiv preprint arXiv:},
+  journal={arXiv preprint arXiv:1904.07734},
   year={2019}
 }
 
