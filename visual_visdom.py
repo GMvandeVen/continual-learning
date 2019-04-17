@@ -9,10 +9,10 @@ def _vis(env='main'):
     return Visdom(env=env)
 
 
-def visualize_images(tensor, name, env='main', w=400, h=400):
+def visualize_images(tensor, name, env='main', w=400, h=400, nrow=8):
     '''Plot images contained in [tensor] to visdom-server.'''
     options = dict(title=name, width=w, height=h)
-    _WINDOW_CASH[name] = _vis(env).images(tensor.cpu().numpy(), win=_WINDOW_CASH.get(name), nrow=8, opts=options)
+    _WINDOW_CASH[name] = _vis(env).images(tensor.cpu().numpy(), win=_WINDOW_CASH.get(name), nrow=nrow, opts=options)
 
 
 def visualize_scalars(scalars, names, title, iteration, env='main', ylabel=None):

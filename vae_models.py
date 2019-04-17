@@ -1,9 +1,7 @@
 import torch
-from torch import nn
 from torch.nn import functional as F
-import excitability_modules as eM
 import utils
-import linear_nets
+from linear_nets import MLP,fc_layer,fc_layer_split
 from replayer import Replayer
 
 
@@ -11,7 +9,8 @@ class AutoEncoder(Replayer):
     """Class for variational auto-encoder (VAE) models."""
 
     def __init__(self, image_size, image_channels, classes,
-                 fc_layers=3, fc_units=1000, fc_drop=0, fc_bn=True, fc_nl="relu", z_dim=20):
+                 fc_layers=3, fc_units=1000, fc_drop=0, fc_bn=True, fc_nl="relu", gated=False, z_dim=20):
+        '''Class for variational auto-encoder (VAE) models.'''
 
         # Set configurations
         super().__init__()
@@ -23,13 +22,12 @@ class AutoEncoder(Replayer):
         self.z_dim = z_dim
         self.fc_units = fc_units
 
-        # Training related components that should be set before training
-        # -criterion for reconstruction
-        self.recon_criterion = None
-        # -weigths of different components of the loss function
+        # Weigths of different components of the loss function
         self.lamda_rcl = 1.
         self.lamda_vl = 1.
-        self.lamda_pl = 0. # --> when used as "classifier with feedback-connections", this should be set to 1.
+        self.lamda_pl = 0.  #--> when used as "classifier with feedback-connections", this should be set to 1.
+
+        self.average = True #--> makes that [reconL] and [variatL] are both divided by number of input-pixels
 
         # Check whether there is at least 1 fc-layer
         if fc_layers<1:
@@ -38,34 +36,29 @@ class AutoEncoder(Replayer):
 
         ######------SPECIFY MODEL------######
 
-        # encoder: flatten image to 2D-tensor
+        ##>----Encoder (= q[z|x])----<##
+        # -flatten image to 2D-tensor
         self.flatten = utils.Flatten()
-        # encoder: fully connected hidden layers
-        self.fcE = linear_nets.MLP(
-            input_size=image_channels*image_size**2, output_size=fc_units, layers=fc_layers-1, hid_size=fc_units,
-            drop=fc_drop, batch_norm=fc_bn, nl=fc_nl, final_nl=True,
-        )
-        enc_mlp_output_size = fc_units if fc_layers>1 else image_channels*image_size**2
+        # -fully connected hidden layers
+        self.fcE = MLP(input_size=image_channels*image_size**2, output_size=fc_units, layers=fc_layers-1,
+                       hid_size=fc_units, drop=fc_drop, batch_norm=fc_bn, nl=fc_nl, gated=gated)
+        mlp_output_size = fc_units if fc_layers > 1 else image_channels*image_size**2
+        # -to z
+        self.toZ = fc_layer_split(mlp_output_size, z_dim, nl_mean='none', nl_logvar='none')
 
-        # classifier (from final hidden layer of encoder)
-        self.classifier = nn.Sequential(nn.Dropout(fc_drop),
-                                        eM.LinearExcitability(enc_mlp_output_size, classes))
+        ##>----Classifier----<##
+        self.classifier = fc_layer(mlp_output_size, classes, excit_buffer=True, nl='none')
 
-        # reparametrization ("to Z and back")
-        out_nl = True if fc_layers>1 else False
-        dec_mlp_input_size = fc_units if fc_layers>1 else image_channels*image_size**2
-        self.toZ = nn.Linear(enc_mlp_output_size, z_dim)       # estimating mean
-        self.toZlogvar = nn.Linear(enc_mlp_output_size, z_dim) # estimating log(SD**2)
-        self.fromZ = linear_nets.fc_layer(z_dim, dec_mlp_input_size, batch_norm=(out_nl and fc_bn),
-                                         nl=fc_nl if out_nl else "none")
+        ##>----Decoder (= p[x|z])----<##
+        # -from z
+        out_nl = True if fc_layers > 1 else False
+        self.fromZ = fc_layer(z_dim, mlp_output_size, batch_norm=(out_nl and fc_bn), nl=fc_nl if out_nl else "none")
+        # -fully connected hidden layers
+        self.fcD = MLP(input_size=fc_units, output_size=image_channels*image_size**2, layers=fc_layers-1,
+                       hid_size=fc_units, drop=fc_drop, batch_norm=fc_bn, nl=fc_nl, gated=gated, output='BCE')
+        # -to image-shape
+        self.to_image = utils.Reshape(image_channels=image_channels)
 
-        # decoder: fully connected hidden layers (with no non-linearity or batchnorm in final layer!)
-        self.fcD = linear_nets.MLP(
-            input_size=fc_units, output_size=image_channels*image_size**2, layers=fc_layers-1, hid_size=fc_units,
-            drop=fc_drop, batch_norm=fc_bn, nl=fc_nl, final_nl=False,
-        )
-        # decoder: reshape to image
-        self.reshapeD = utils.ToImage(image_channels=image_channels)
 
     @property
     def name(self):
@@ -74,14 +67,26 @@ class AutoEncoder(Replayer):
         z_label = "z{}".format(self.z_dim)
         return "{}({}{}{}-c{})".format(self.label, fc_label, hid_label, z_label, self.classes)
 
+    def list_init_layers(self):
+        '''Return list of modules whose parameters could be initialized differently (i.e., conv- or fc-layers).'''
+        list = []
+        list += self.fcE.list_init_layers()
+        list += self.toZ.list_init_layers()
+        list += self.classifier.list_init_layers()
+        list += self.fromZ.list_init_layers()
+        list += self.fcD.list_init_layers()
+        return list
+
+
+
+    ##------ FORWARD FUNCTIONS --------##
 
     def encode(self, x):
         '''Pass input through feed-forward connections, to get [hE], [z_mean] and [z_logvar].'''
         # extract final hidden features (forward-pass)
         hE = self.fcE(self.flatten(x))
         # get parameters for reparametrization
-        z_mean = self.toZ(hE)
-        z_logvar = self.toZlogvar(hE)
+        (z_mean, z_logvar) = self.toZ(hE)
         return z_mean, z_logvar, hE
 
     def classify(self, x):
@@ -100,10 +105,10 @@ class AutoEncoder(Replayer):
         '''Pass latent variable activations through feedback connections, to give reconstructed image [image_recon].'''
         hD = self.fromZ(z)
         image_features = self.fcD(hD)
-        image_recon = self.reshapeD(image_features)
+        image_recon = self.to_image(image_features)
         return image_recon
 
-    def forward(self, x, full=False):
+    def forward(self, x, full=False, reparameterize=True):
         '''Forward function to propagate [x] through the encoder, reparametrization and decoder.
 
         Input:  - [x]   <4D-tensor> of shape [batch_size]x[channels]x[image_size]x[image_size]
@@ -118,7 +123,7 @@ class AutoEncoder(Replayer):
         if full:
             # encode (forward), reparameterize and decode (backward)
             mu, logvar, hE = self.encode(x)
-            z = self.reparameterize(mu, logvar) if self.training else mu
+            z = self.reparameterize(mu, logvar) if reparameterize else mu
             x_recon = self.decode(z)
             # classify
             y_hat = self.classifier(hE)
@@ -128,46 +133,69 @@ class AutoEncoder(Replayer):
             return self.classify(x) # -> if [full]=False, only forward pass for prediction
 
 
-    def sample(self, size, allowed_predictions=None, return_scores=False):
-        '''Generate [size] samples from the model. Outputs are tensors (not "requiring grad"), on same device as <self>.
 
-        INPUT:  - [allowed_predictions] <list> of [class_ids] which are allowed to be predicted
-                - [return_scores]       <bool>; if True, [y_hat] is also returned
+    ##------ SAMPLE FUNCTIONS --------##
 
-        OUTPUT: - [X]     <4D-tensor> generated images
-                - [y]     <1D-tensor> predicted corresponding labels
-                - [y_hat] <2D-tensor> predicted "logits"/"scores" for all [allowed_predictions]'''
+    def sample(self, size):
+        '''Generate [size] samples from the model. Output is tensor (not "requiring grad"), on same device as <self>.'''
 
         # set model to eval()-mode
         mode = self.training
         self.eval()
 
         # sample z
-        z = torch.randn(size, self.z_dim)
-        z = z.to(self._device())
+        z = torch.randn(size, self.z_dim).to(self._device())
 
         # decode z into image X
         with torch.no_grad():
             X = self.decode(z)
 
-        # use forward model to predict scores of generated images
-        with torch.no_grad():
-            y_hat = self.classify(X)
-        y_hat = y_hat[:, allowed_predictions] if (allowed_predictions is not None) else y_hat
-        # get "predicted" class-labels (indexed according to each class' position in [allowed_predictions]!)
-        _, y = torch.max(y_hat, dim=1)
-
         # set model back to its initial mode
         self.train(mode=mode)
 
-        # return samples as [batch_size]x[channels]x[image_size]x[image_size] tensor, plus classes-labels
-        return (X, y, y_hat) if return_scores else (X, y)
+        # return samples as [batch_size]x[channels]x[image_size]x[image_size] tensor
+        return X
+
+
+
+    ##------ LOSS FUNCTIONS --------##
+
+    def calculate_recon_loss(self, x, x_recon, average=False):
+        '''Calculate reconstruction loss for each element in the batch.
+
+        INPUT:  - [x]           <tensor> with original input (1st dimension (ie, dim=0) is "batch-dimension")
+                - [x_recon]     (tuple of 2x) <tensor> with reconstructed input in same shape as [x]
+                - [average]     <bool>, if True, loss is average over all pixels; otherwise it is summed
+
+        OUTPUT: - [reconL]      <1D-tensor> of length [batch_size]'''
+
+        batch_size = x.size(0)
+        reconL = F.binary_cross_entropy(input=x_recon.view(batch_size, -1), target=x.view(batch_size, -1),
+                                        reduction='none')
+        reconL = torch.mean(reconL, dim=1) if average else torch.sum(reconL, dim=1)
+
+        return reconL
+
+
+    def calculate_variat_loss(self, mu, logvar):
+        '''Calculate reconstruction loss for each element in the batch.
+
+        INPUT:  - [mu]        <2D-tensor> by encoder predicted mean for [z]
+                - [logvar]    <2D-tensor> by encoder predicted logvar for [z]
+
+        OUTPUT: - [variatL]   <1D-tensor> of length [batch_size]'''
+
+        # --> calculate analytically
+        # ---- see Appendix B from: Kingma & Welling (2014) Auto-Encoding Variational Bayes, ICLR ----#
+        variatL = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+
+        return variatL
 
 
     def loss_function(self, recon_x, x, y_hat=None, y_target=None, scores=None, mu=None, logvar=None):
         '''Calculate and return various losses that could be used for training and/or evaluating the model.
 
-        INPUT:  - [x_recon]         <4D-tensor> reconstructed image in same shape as [x]
+        INPUT:  - [recon_x]         <4D-tensor> reconstructed image in same shape as [x]
                 - [x]               <4D-tensor> original image
                 - [y_hat]           <2D-tensor> with predicted "logits" for each class
                 - [y_target]        <1D-tensor> with target-classes (as integers)
@@ -175,30 +203,30 @@ class AutoEncoder(Replayer):
                 - [mu]              <2D-tensor> with either [z] or the estimated mean of [z]
                 - [logvar]          None or <2D-tensor> with estimated log(SD^2) of [z]
 
+        SETTING:- [self.average]    <bool>, if True, both [reconL] and [variatL] are divided by number of input elements
+
         OUTPUT: - [reconL]       reconstruction loss indicating how well [x] and [x_recon] match
                 - [variatL]      variational (KL-divergence) loss "indicating how normally distributed [z] is"
                 - [predL]        prediction loss indicating how well targets [y] are predicted
                 - [distilL]      knowledge distillation (KD) loss indicating how well the predicted "logits" ([y_hat])
                                      match the target "logits" ([scores])'''
 
-        batch_size = x.size(0)
-
         ###-----Reconstruction loss-----###
-        reconL = self.recon_criterion(recon_x.view(batch_size, -1), x.view(batch_size, -1))
+        reconL = self.calculate_recon_loss(x=x, x_recon=recon_x, average=self.average) #-> possibly average over pixels
+        reconL = torch.mean(reconL)                                                    #-> average over batch
 
         ###-----Variational loss-----###
         if logvar is not None:
-            #---- see Appendix B from: Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014 ----#
-            variatL = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / batch_size
-            # -normalise by same number of elements as in reconstruction
-            variatL /= (self.image_channels * self.image_size ** 2)
-            # --> because self.recon_criterion averages over batch-size but also over all pixels/elements in recon!!
+            variatL = self.calculate_variat_loss(mu=mu, logvar=logvar)
+            variatL = torch.mean(variatL)                             #-> average over batch
+            if self.average:
+                variatL /= (self.image_channels * self.image_size**2) #-> divide by # of input-pixels, if [self.average]
         else:
             variatL = torch.tensor(0., device=self._device())
 
         ###-----Prediction loss-----###
         if y_target is not None:
-            predL = F.cross_entropy(y_hat, y_target, size_average=True)
+            predL = F.cross_entropy(y_hat, y_target, reduction='elementwise_mean')  #-> average over batch
         else:
             predL = torch.tensor(0., device=self._device())
 
@@ -214,7 +242,9 @@ class AutoEncoder(Replayer):
 
 
 
-    def train_a_batch(self, x, y, x_=None, y_=None, scores_=None, rnt=0.5, active_classes=None, task=1):
+    ##------ TRAINING FUNCTIONS --------##
+
+    def train_a_batch(self, x, y, x_=None, y_=None, scores_=None, rnt=0.5, active_classes=None, task=1, **kwargs):
         '''Train model for one batch ([x],[y]), possibly supplemented with replayed data ([x_],[y_]).
 
         [x]               <tensor> batch of inputs (could be None, in which case only 'replayed' data is used)
@@ -233,30 +263,33 @@ class AutoEncoder(Replayer):
         if x is not None:
             # Run the model
             recon_batch, y_hat, mu, logvar, z = self(x, full=True)
-            # If needed (e.g., incremental or multihead set-up), remove predictions for classes not in current task
+            # If needed (e.g., Task-IL or Class-IL scenario), remove predictions for classes not in current task
             if active_classes is not None:
                 y_hat = y_hat[:, active_classes[-1]] if type(active_classes[0])==list else y_hat[:, active_classes]
             # Calculate all losses
             reconL, variatL, predL, _ = self.loss_function(recon_x=recon_batch, x=x, y_hat=y_hat,
                                                            y_target=y, mu=mu, logvar=logvar)
             # Weigh losses as requested
-            loss = self.lamda_rcl*reconL + self.lamda_vl*variatL + self.lamda_pl*predL
+            loss_cur = self.lamda_rcl*reconL + self.lamda_vl*variatL + self.lamda_pl*predL
 
             # Calculate training-precision
             if y is not None:
                 _, predicted = y_hat.max(1)
                 precision = (y == predicted).sum().item() / x.size(0)
 
+
         ##--(2)-- REPLAYED DATA --##
         if x_ is not None:
-            # If [x_] is a list, perform separate replay for each entry
-            n_replays = len(x_) if type(x_)==list else 1
-            if not type(x_)==list:
-                x_ = [x_]
+            # In the Task-IL scenario, [y_] or [scores_] is a list and [x_] needs to be evaluated on each of them
+            # (in case of 'exact' or 'exemplar' replay, [x_] is also a list!
+            TaskIL = (type(y_)==list) if (y_ is not None) else (type(scores_)==list)
+            if not TaskIL:
                 y_ = [y_]
                 scores_ = [scores_]
-                if active_classes is not None:
-                    active_classes = [active_classes]
+                active_classes = [active_classes] if (active_classes is not None) else None
+                n_replays = len(x_) if (type(x_)==list) else 1
+            else:
+                n_replays = len(y_) if (y_ is not None) else (len(scores_) if (scores_ is not None) else 1)
 
             # Prepare lists to store losses for each replay
             loss_replay = [None]*n_replays
@@ -265,19 +298,32 @@ class AutoEncoder(Replayer):
             predL_r = [None]*n_replays
             distilL_r = [None]*n_replays
 
+            # Run model (if [x_] is not a list with separate replay per task)
+            if (not type(x_)==list):
+                x_temp_ = x_
+                recon_batch, y_hat_all, mu, logvar, z = self(x_temp_, full=True)
+
             # Loop to perform each replay
             for replay_id in range(n_replays):
-                # Run the model
-                recon_batch, y_hat, mu, logvar, z = self(x_[replay_id], full=True)
-                # If needed (e.g., incremental or multihead set-up), remove predictions for classes not in replayed task
+
+                # -if [x_] is a list with separate replay per task, evaluate model on this task's replay
+                if (type(x_)==list):
+                    x_temp_ = x_[replay_id]
+                    recon_batch, y_hat_all, mu, logvar, z = self(x_temp_, full=True)
+
+                # If needed (e.g., Task-IL or Class-IL scenario), remove predictions for classes not in replayed task
                 if active_classes is not None:
-                    y_hat = y_hat[:, active_classes[replay_id]]
+                    y_hat = y_hat_all[:, active_classes[replay_id]]
+                else:
+                    y_hat = y_hat_all
+
                 # Calculate all losses
                 reconL_r[replay_id], variatL_r[replay_id], predL_r[replay_id], distilL_r[replay_id] = self.loss_function(
-                    recon_x=recon_batch, x=x_[replay_id], y_hat=y_hat,
+                    recon_x=recon_batch, x=x_temp_, y_hat=y_hat,
                     y_target=y_[replay_id] if (y_ is not None) else None,
                     scores=scores_[replay_id] if (scores_ is not None) else None, mu=mu, logvar=logvar,
                 )
+
                 # Weigh losses as requested
                 loss_replay[replay_id] = self.lamda_rcl*reconL_r[replay_id] + self.lamda_vl*variatL_r[replay_id]
                 if self.replay_targets=="hard":
@@ -285,13 +331,10 @@ class AutoEncoder(Replayer):
                 elif self.replay_targets=="soft":
                     loss_replay[replay_id] += self.lamda_pl*distilL_r[replay_id]
 
-            # Calculate total loss
-            if x is not None:
-                loss_total = rnt*loss + (1-rnt)*sum(loss_replay)/n_replays
-            else:
-                loss_total = sum(loss_replay)/n_replays
-        else:
-            loss_total = loss
+
+        # Calculate total loss
+        loss_replay = None if (x_ is None) else sum(loss_replay)/n_replays
+        loss_total = loss_replay if (x is None) else (loss_cur if x_ is None else rnt*loss_cur+(1-rnt)*loss_replay)
 
 
         # Reset optimizer

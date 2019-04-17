@@ -35,13 +35,40 @@ def loss_fn_kd(scores, target_scores, T=2.):
         targets_norm = torch.cat([targets_norm.detach(), zeros_to_add], dim=1)
 
     # Calculate distillation loss (see e.g., Li and Hoiem, 2017)
-    KD_loss_unnorm = (-targets_norm * log_scores_norm).mean()
+    KD_loss_unnorm = (-targets_norm * log_scores_norm).mean()     #--> average over batch
 
     # normalize
     KD_loss = KD_loss_unnorm * T**2
 
     return KD_loss
 
+
+def loss_fn_kd_binary(scores, target_scores, T=2.):
+    """Compute binary knowledge-distillation (KD) loss given [scores] and [target_scores].
+
+    Both [scores] and [target_scores] should be tensors, although [target_scores] should be repackaged.
+    'Hyperparameter': temperature"""
+
+    device = scores.device
+
+    scores_norm = torch.sigmoid(scores / T)
+    targets_norm = torch.sigmoid(target_scores / T)
+
+    # if [scores] and [target_scores] do not have equal size, append 0's to [targets_norm]
+    n = scores.size(1)
+    if n>target_scores.size(1):
+        n_batch = scores.size(0)
+        zeros_to_add = torch.zeros(n_batch, n-target_scores.size(1))
+        zeros_to_add = zeros_to_add.to(device)
+        targets_norm = torch.cat([targets_norm, zeros_to_add], dim=1)
+
+    # Calculate distillation loss (see e.g., Li and Hoiem, 2017)
+    KD_loss_unnorm = (-( targets_norm * torch.log(scores_norm) + (1-targets_norm) * torch.log(1-scores_norm) )).mean()
+
+    # normalize
+    KD_loss = KD_loss_unnorm * T**2
+
+    return KD_loss
 
 
 ##-------------------------------------------------------------------------------------------------------------------##
@@ -73,6 +100,13 @@ def label_squeezing_collate_fn(batch):
     x, y = default_collate(batch)
     return x, y.long().squeeze()
 
+
+def to_one_hot(y, classes):
+    '''Convert a nd-array with integers [y] to a 2D "one-hot" tensor.'''
+    c = np.zeros(shape=[len(y), classes], dtype='float32')
+    c[range(len(y)), y] = 1.
+    c = torch.from_numpy(c)
+    return c
 
 
 ##-------------------------------------------------------------------------------------------------------------------##
@@ -128,100 +162,6 @@ def print_model_info(model, title="MODEL"):
     _ = count_parameters(model)
     print(90*"-" + "\n\n")
 
-
-def get_param_stamp_from_args(args):
-    '''To get param-stamp a bit quicker.'''
-
-    config = data.get_multitask_experiment(
-        name=args.experiment, scenario=args.scenario, tasks=args.tasks, data_dir=args.d_dir,
-        only_config=True, verbose=False, exception=True if args.seed==0 else False,
-    )
-    if args.feedback:
-        model = AutoEncoder(
-            image_size=config['size'], image_channels=config['channels'], classes=config['classes'],
-            fc_layers=args.fc_lay, fc_units=args.fc_units, z_dim=args.z_dim,
-            fc_drop=args.fc_drop, fc_bn=True if args.fc_bn=="yes" else False, fc_nl=args.fc_nl,
-        )
-    else:
-        model = Classifier(
-            image_size=config['size'], image_channels=config['channels'], classes=config['classes'],
-            fc_layers=args.fc_lay, fc_units=args.fc_units,
-            fc_drop=args.fc_drop, fc_bn=True if args.fc_bn=="yes" else False, fc_nl=args.fc_nl,
-        )
-    train_gen = True if (args.replay=="generative" and not args.feedback) else False
-    if train_gen:
-        generator = AutoEncoder(
-            image_size=config['size'], image_channels=config['channels'],
-            fc_layers=args.g_fc_lay, fc_units=args.g_fc_uni, z_dim=args.z_dim, classes=config['classes'],
-            fc_drop=args.fc_drop, fc_bn=True if args.fc_bn=="yes" else False, fc_nl=args.fc_nl,
-        )
-
-    model_name = model.name
-    replay_model_name = generator.name if train_gen else None
-    param_stamp = get_param_stamp(args, model_name, verbose=False, replay=False if (args.replay=="none") else True,
-                                  replay_model_name=replay_model_name)
-    return param_stamp
-
-
-def get_param_stamp(args, model_name, verbose=True, replay=False, replay_model_name=None):
-    '''Based on the input-arguments, produce a "parameter-stamp".'''
-
-    # -for task
-    task_stamp = "{exp}{n}-{sce}".format(exp=args.experiment, n=args.tasks, sce=args.scenario)
-    if verbose:
-        print("\n"+" --> task:          "+task_stamp)
-
-    # -for model
-    model_stamp = model_name
-    if verbose:
-        print(" --> model:         "+model_stamp)
-
-    # -for hyper-parameters
-    hyper_stamp = "i{n}-lr{lr}-b{bsz}-{optim}".format(n=args.iters, lr=args.lr, bsz=args.batch, optim=args.optimizer)
-    if verbose:
-        print(" --> hyper-params:  " + hyper_stamp)
-
-    # -for replay
-    if replay:
-        replay_stamp = "{rep}{KD}{model}{gi}".format(
-            rep=args.replay, KD="-KD{}".format(args.temp) if args.distill else "",
-            model="" if (replay_model_name is None) else "-{}".format(replay_model_name),
-            gi="-gi{}".format(args.g_iters) if (
-                (replay_model_name is not None) and (not args.iters==args.g_iters)
-            ) else ""
-        )
-        if verbose:
-            print(" --> replay:        " + replay_stamp)
-    replay_stamp = "--{}".format(replay_stamp) if replay else ""
-
-    # -for EWC / SI
-    if (args.ewc_lambda>0 and args.ewc) or (args.si_c>0 and args.si):
-        ewc_stamp = "EWC{l}-{fi}{o}".format(
-            l=args.ewc_lambda,
-            fi="{}{}".format("N" if args.fisher_n is None else args.fisher_n, "E" if args.emp_fi else ""),
-            o="-O{}".format(args.gamma) if args.online else "",
-        ) if (args.ewc_lambda>0 and args.ewc) else ""
-        si_stamp = "SI{c}-{eps}".format(c=args.si_c, eps=args.epsilon) if (args.si_c>0 and args.si) else ""
-        both = "--" if (args.ewc_lambda>0 and args.ewc) and (args.si_c>0 and args.si) else ""
-        if verbose and args.ewc_lambda>0 and args.ewc:
-            print(" --> EWC:           " + ewc_stamp)
-        if verbose and args.si_c>0 and args.si:
-            print(" --> SI:            " + si_stamp)
-    ewc_stamp = "--{}{}{}".format(ewc_stamp, both, si_stamp) if (
-        (args.ewc_lambda>0 and args.ewc) or (args.si_c>0 and args.si)
-    ) else ""
-
-    # -XdG
-    xdg_stamp = "--XdG{}".format(args.gating_prop) if (hasattr(args, "gating_prop") and args.gating_prop>0) else ""
-
-    # --> combine
-    param_stamp = "{}--{}--{}{}{}{}{}".format(
-        task_stamp, model_stamp, hyper_stamp, replay_stamp, ewc_stamp, xdg_stamp, "-{}".format(args.seed),
-    )
-
-    ## Print param-stamp on screen and return
-    print(param_stamp)
-    return param_stamp
 
 
 ##-------------------------------------------------------------------------------------------------------------------##

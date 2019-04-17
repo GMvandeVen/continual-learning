@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import visual_visdom
 import visual_plt
@@ -11,8 +12,8 @@ import utils
 ####-----------------------------####
 
 
-def validate(model, dataset, batch_size=128, test_size=1024, verbose=True, collate_fn=None, allowed_classes=None,
-             task_mask=False, task=None):
+def validate(model, dataset, batch_size=128, test_size=1024, verbose=True, allowed_classes=None,
+             with_exemplars=False, no_task_mask=False, task=None):
     '''Evaluate precision (= accuracy or proportion correct) of a classifier ([model]) on [dataset].
 
     [allowed_classes]   None or <list> containing all "active classes" between which should be chosen
@@ -22,12 +23,15 @@ def validate(model, dataset, batch_size=128, test_size=1024, verbose=True, colla
     mode = model.training
     model.eval()
 
-    # Apply task-specifc "gating-mask" for each hidden fully connected layer
-    if task_mask:
-        model.apply_XdGmask(task=task)
+    # Apply task-specifc "gating-mask" for each hidden fully connected layer (or remove it!)
+    if hasattr(model, "mask_dict") and model.mask_dict is not None:
+        if no_task_mask:
+            model.reset_XdGmask()
+        else:
+            model.apply_XdGmask(task=task)
 
     # Loop over batches in [dataset]
-    data_loader = utils.get_data_loader(dataset, batch_size, cuda=model._is_on_cuda(), collate_fn=collate_fn)
+    data_loader = utils.get_data_loader(dataset, batch_size, cuda=model._is_on_cuda())
     total_tested = total_correct = 0
     for data, labels in data_loader:
         # -break on [test_size] (if "None", full dataset is used)
@@ -38,8 +42,14 @@ def validate(model, dataset, batch_size=128, test_size=1024, verbose=True, colla
         data, labels = data.to(model._device()), labels.to(model._device())
         labels = labels - allowed_classes[0] if (allowed_classes is not None) else labels
         with torch.no_grad():
-            scores = model(data) if (allowed_classes is None) else model(data)[:, allowed_classes]
-        _, predicted = torch.max(scores, 1)
+            if with_exemplars:
+                predicted = model.classify_with_exemplars(data, allowed_classes=allowed_classes)
+                # - in case of Domain-IL scenario, collapse all corresponding domains into same class
+                if max(predicted).item() >= model.classes:
+                    predicted = predicted % model.classes
+            else:
+                scores = model(data) if (allowed_classes is None) else model(data)[:, allowed_classes]
+                _, predicted = torch.max(scores, 1)
         # -update statistics
         total_correct += (predicted == labels).sum().item()
         total_tested += len(data)
@@ -63,8 +73,8 @@ def initiate_precision_dict(n_tasks):
 
 
 def precision(model, datasets, current_task, iteration, classes_per_task=None, scenario="class",
-              precision_dict=None, collate_fn=None, test_size=None, visdom=None, verbose=False, summary_graph=True,
-              task_mask=False):
+              precision_dict=None, test_size=None, visdom=None, verbose=False, summary_graph=True,
+              with_exemplars=False, no_task_mask=False):
     '''Evaluate precision of a classifier (=[model]) on all tasks so far (= up to [current_task]) using [datasets].
 
     [precision_dict]    None or <dict> of all measures to keep track of, to which results will be appended to
@@ -83,8 +93,9 @@ def precision(model, datasets, current_task, iteration, classes_per_task=None, s
                 allowed_classes = list(range(classes_per_task*i, classes_per_task*(i+1)))
             elif scenario=='class':
                 allowed_classes = list(range(classes_per_task*current_task))
-            precs.append(validate(model, datasets[i], test_size=test_size, verbose=verbose, collate_fn=collate_fn,
-                                  allowed_classes=allowed_classes, task_mask=task_mask, task=i+1))
+            precs.append(validate(model, datasets[i], test_size=test_size, verbose=verbose,
+                                  allowed_classes=allowed_classes, with_exemplars=with_exemplars,
+                                  no_task_mask=no_task_mask, task=i+1))
         else:
             precs.append(0)
     average_precs = sum([precs[task_id] for task_id in range(current_task)]) / current_task
@@ -132,15 +143,18 @@ def show_samples(model, config, pdf=None, visdom=None, size=32, title="Generated
     model.eval()
 
     # Generate samples from the model
-    sample, labels = model.sample(size)
+    sample = model.sample(size)
     image_tensor = sample.view(-1, config['channels'], config['size'], config['size']).cpu()
 
     # Plot generated images in [pdf] and/or [visdom]
+    # -number of rows
+    nrow = int(np.ceil(np.sqrt(size)))
+    # -make plots
     if pdf is not None:
-        visual_plt.plot_images_from_tensor(image_tensor, pdf, title=title)
+        visual_plt.plot_images_from_tensor(image_tensor, pdf, title=title, nrow=nrow)
     if visdom is not None:
         visual_visdom.visualize_images(
-            tensor=image_tensor, name='generated samples ({})'.format(visdom["graph"]), env=visdom["env"]
+            tensor=image_tensor, name='Generated samples ({})'.format(visdom["graph"]), env=visdom["env"], nrow=nrow,
         )
 
     # Set model back to initial mode
@@ -177,14 +191,17 @@ def show_reconstruction(model, dataset, config, pdf=None, visdom=None, size=32, 
          recon_batch.view(-1, config['channels'], config['size'], config['size'])[:size]]
     ).cpu()
     image_tensor = comparison.view(-1, config['channels'], config['size'], config['size'])
+    # -number of rows
+    nrow = int(np.ceil(np.sqrt(size*2)))
+    # -make plots
     if pdf is not None:
         task_stm = "" if task is None else " (task {})".format(task)
         visual_plt.plot_images_from_tensor(
-            image_tensor, pdf, nrow=8, title="Reconstructions" + task_stm
+            image_tensor, pdf, nrow=nrow, title="Reconstructions" + task_stm
         )
     if visdom is not None:
         visual_visdom.visualize_images(
-            tensor=image_tensor, name='reconstructed samples ({})'.format(visdom["graph"]), env=visdom["env"],
+            tensor=image_tensor, name='Reconstructions ({})'.format(visdom["graph"]), env=visdom["env"], nrow=nrow,
         )
 
     # Set model back to initial mode
