@@ -114,7 +114,9 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class",classes
             # Update # iters left on current data-loader(s) and, if needed, create new one(s)
             iters_left -= 1
             if iters_left==0:
-                data_loader = iter(utils.get_data_loader(train_dataset, batch_size, cuda=cuda, drop_last=True))
+                data_loader = iter(utils.get_data_loader(training_dataset, batch_size, cuda=cuda, drop_last=True))
+                # NOTE:  [train_dataset]  is training-set of current task
+                #      [training_dataset] is training-set of current task with stored exemplars added (if requested)
                 iters_left = len(data_loader)
             if Exact:
                 if scenario=="task":
