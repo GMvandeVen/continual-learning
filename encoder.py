@@ -107,8 +107,9 @@ class Classifier(ContinualLearner, Replayer, ExemplarHandler):
                     classes_per_task = int(y_hat.size(1) / task)
                     binary_targets = binary_targets[:, -(classes_per_task):]
                     binary_targets = torch.cat([torch.sigmoid(scores / self.KD_temp), binary_targets], dim=1)
-                predL = None if y is None else F.binary_cross_entropy_with_logits(input=y_hat, target=binary_targets,
-                                                                                  reduction='elementwise_mean')
+                predL = None if y is None else F.binary_cross_entropy_with_logits(
+                    input=y_hat, target=binary_targets, reduction='none'
+                ).sum(dim=1).mean()     #--> sum over classes, then average over batch
             else:
                 # -multiclass prediction loss
                 predL = None if y is None else F.cross_entropy(input=y_hat, target=y, reduction='elementwise_mean')
@@ -166,8 +167,9 @@ class Classifier(ContinualLearner, Replayer, ExemplarHandler):
                 if (y_ is not None) and (y_[replay_id] is not None):
                     if self.binaryCE:
                         binary_targets_ = utils.to_one_hot(y_[replay_id].cpu(), y_hat.size(1)).to(y_[replay_id].device)
-                        predL_r[replay_id] = F.binary_cross_entropy_with_logits(input=y_hat, target=binary_targets_,
-                                                                                reduction='elementwise_mean')
+                        predL_r[replay_id] = F.binary_cross_entropy_with_logits(
+                            input=y_hat, target=binary_targets_, reduction='none'
+                        ).sum(dim=1).mean()     #--> sum over classes, then average over batch
                     else:
                         predL_r[replay_id] = F.cross_entropy(y_hat, y_[replay_id], reduction='elementwise_mean')
                 if (scores_ is not None) and (scores_[replay_id] is not None):
