@@ -72,7 +72,7 @@ For more information on `visdom` see <https://github.com/facebookresearch/visdom
 ### Citation
 Please consider citing our papers if you use this code in your research:
 ```
-@article{vandeven2018three,
+@article{vandeven2019three,
   title={Three scenarios for continual learning},
   author={van de Ven, Gido M and Tolias, Andreas S},
   journal={arXiv preprint arXiv:1904.07734},
