@@ -57,14 +57,7 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class",classes
 
         # Add exemplars (if available) to current dataset (if requested)
         if add_exemplars and task>1:
-            # ---------- ADHOC SOLUTION: permMNIST needs transform to tensor, while splitMNIST does not ---------- #
-            if len(train_datasets)>6:
-                target_transform = (lambda y, x=classes_per_task: torch.tensor(y%x)) if (
-                        scenario=="domain"
-                ) else (lambda y: torch.tensor(y))
-            else:
-                target_transform = (lambda y, x=classes_per_task: y%x) if scenario=="domain" else None
-            # ---------------------------------------------------------------------------------------------------- #
+            target_transform = (lambda y, x=classes_per_task: y%x) if scenario=="domain" else None
             exemplar_dataset = ExemplarDataset(model.exemplar_sets, target_transform=target_transform)
             training_dataset = ConcatDataset([train_dataset, exemplar_dataset])
         else:

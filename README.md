@@ -7,8 +7,8 @@ for continual learning ([link](https://arxiv.org/abs/1809.10635))
 
 ## Requirements
 The current version of the code has been tested with:
-* `pytorch 0.4.1`
-* `torchvision 0.2.1`
+* `pytorch 1.1.0`
+* `torchvision 0.2.2`
 
 
 ## Running the experiments

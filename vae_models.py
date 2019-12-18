@@ -226,7 +226,7 @@ class AutoEncoder(Replayer):
 
         ###-----Prediction loss-----###
         if y_target is not None:
-            predL = F.cross_entropy(y_hat, y_target, reduction='elementwise_mean')  #-> average over batch
+            predL = F.cross_entropy(y_hat, y_target, reduction='mean')  #-> average over batch
         else:
             predL = torch.tensor(0., device=self._device())
 

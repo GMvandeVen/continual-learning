@@ -82,9 +82,6 @@ class ExemplarHandler(nn.Module, metaclass=abc.ABCMeta):
                 if k>0:
                     exemplar_sum = torch.sum(exemplar_features[:k], dim=0).unsqueeze(0)
                     features_means = (features + exemplar_sum)/(k+1)
-                    # if self.norm_exemplars:
-                    #     # perhaps this normalization should be left out??
-                    #     features_means = F.normalize(features_means, p=2, dim=1)
                     features_dists = features_means - class_mean
                 else:
                     features_dists = features - class_mean

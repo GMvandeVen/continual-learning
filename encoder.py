@@ -112,7 +112,7 @@ class Classifier(ContinualLearner, Replayer, ExemplarHandler):
                 ).sum(dim=1).mean()     #--> sum over classes, then average over batch
             else:
                 # -multiclass prediction loss
-                predL = None if y is None else F.cross_entropy(input=y_hat, target=y, reduction='elementwise_mean')
+                predL = None if y is None else F.cross_entropy(input=y_hat, target=y, reduction='mean')
 
             # Weigh losses
             loss_cur = predL
@@ -171,7 +171,7 @@ class Classifier(ContinualLearner, Replayer, ExemplarHandler):
                             input=y_hat, target=binary_targets_, reduction='none'
                         ).sum(dim=1).mean()     #--> sum over classes, then average over batch
                     else:
-                        predL_r[replay_id] = F.cross_entropy(y_hat, y_[replay_id], reduction='elementwise_mean')
+                        predL_r[replay_id] = F.cross_entropy(y_hat, y_[replay_id], reduction='mean')
                 if (scores_ is not None) and (scores_[replay_id] is not None):
                     # n_classes_to_consider = scores.size(1) #--> with this version, no zeroes are added to [scores]!
                     n_classes_to_consider = y_hat.size(1)    #--> zeros will be added to [scores] to make it this size!
