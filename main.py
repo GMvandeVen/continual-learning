@@ -113,10 +113,7 @@ eval_params.add_argument('--sample-n', type=int, default=64, help="# images to s
 
 def run(args):
 
-    # Set default-values for certain arguments based on chosen scenario & experiment
-    args = set_default_values(args)
-
-    # Set other default arguments & check for incompatible options
+    # Set default arguments & check for incompatible options
     args.lr_gen = args.lr if args.lr_gen is None else args.lr_gen
     args.g_iters = args.iters if args.g_iters is None else args.g_iters
     args.g_fc_lay = args.fc_lay if args.g_fc_lay is None else args.g_fc_lay
@@ -525,5 +522,7 @@ def run(args):
 if __name__ == '__main__':
     # -load input-arguments
     args = parser.parse_args()
+    # -set default-values for certain arguments based on chosen scenario & experiment
+    args = set_default_values(args)
     # -run experiment
     run(args)
