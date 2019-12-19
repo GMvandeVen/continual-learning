@@ -28,7 +28,7 @@ def get_param_stamp_from_args(args):
         model = Classifier(
             image_size=config['size'], image_channels=config['channels'], classes=config['classes'],
             fc_layers=args.fc_lay, fc_units=args.fc_units, fc_drop=args.fc_drop, fc_nl=args.fc_nl,
-            fc_bn=True if args.fc_bn=="yes" else False, excit_buffer=True if args.gating_prop>0 else False,
+            fc_bn=True if args.fc_bn=="yes" else False, excit_buffer=True if args.xdg and args.gating_prop>0 else False,
             binaryCE=args.bce, binaryCE_distill=args.bce_distill,
         )
 
@@ -90,7 +90,7 @@ def get_param_stamp(args, model_name, verbose=True, replay=False, replay_model_n
 
     # -for XdG
     xdg_stamp = ""
-    if (hasattr(args, "gating_prop") and args.gating_prop > 0):
+    if (hasattr(args, 'xdg') and args.xdg) and (hasattr(args, "gating_prop") and args.gating_prop>0):
         xdg_stamp = "--XdG{}".format(args.gating_prop)
         if verbose:
             print(" --> XdG:           " + "gating = {}".format(args.gating_prop))

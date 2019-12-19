@@ -5,6 +5,7 @@ from param_stamp import get_param_stamp_from_args
 import visual_plt
 import numpy as np
 import main
+from param_values import set_default_values
 
 
 description = 'Evaluate variants of "exact replay" as function of available memory budget.'
@@ -20,7 +21,7 @@ parser.add_argument('--results-dir', type=str, default='./results', dest='r_dir'
 task_params = parser.add_argument_group('Task Parameters')
 task_params.add_argument('--experiment', type=str, default='splitMNIST', choices=['permMNIST', 'splitMNIST'])
 task_params.add_argument('--scenario', type=str, default='task', choices=['task', 'domain', 'class'])
-task_params.add_argument('--tasks', type=int, default=5, help='number of tasks')
+task_params.add_argument('--tasks', type=int, help='number of tasks')
 
 # specify loss functions to be used
 loss_params = parser.add_argument_group('Loss Parameters')
@@ -29,7 +30,7 @@ loss_params.add_argument('--bce', action='store_true', help="use binary (instead
 # model architecture parameters
 model_params = parser.add_argument_group('Parameters Main Model')
 model_params.add_argument('--fc-layers', type=int, default=3, dest='fc_lay', help="# of fully-connected layers")
-model_params.add_argument('--fc-units', type=int, default=400, metavar="N", help="# of units in first fc-layers")
+model_params.add_argument('--fc-units', type=int, metavar="N", help="# of units in first fc-layers")
 model_params.add_argument('--fc-drop', type=float, default=0., help="dropout probability for fc-units")
 model_params.add_argument('--fc-bn', type=str, default="no", help="use batch-norm in the fc-layers (no|yes)")
 model_params.add_argument('--fc-nl', type=str, default="relu", choices=["relu", "leakyrelu"])
@@ -38,8 +39,8 @@ model_params.add_argument('--singlehead', action='store_true', help="for Task-IL
 
 # training hyperparameters / initialization
 train_params = parser.add_argument_group('Training Parameters')
-train_params.add_argument('--iters', type=int, default=2000, help="# batches to optimize solver")
-train_params.add_argument('--lr', type=float, default=0.001, help="learning rate")
+train_params.add_argument('--iters', type=int, help="# batches to optimize solver")
+train_params.add_argument('--lr', type=float,  help="learning rate")
 train_params.add_argument('--batch', type=int, default=128, help="batch-size")
 train_params.add_argument('--optimizer', type=str, choices=['adam', 'adam_reset', 'sgd'], default='adam')
 
@@ -116,7 +117,9 @@ if __name__ == '__main__':
 
     ## Load input-arguments
     args = parser.parse_args()
-    # -set default arguments
+    # -set default-values for certain arguments based on chosen scenario & experiment
+    args = set_default_values(args, also_hyper_params=False)
+    # -set other default arguments
     args.lr_gen = args.lr if args.lr_gen is None else args.lr_gen
     args.g_iters = args.iters if args.g_iters is None else args.g_iters
     args.g_fc_lay = args.fc_lay if args.g_fc_lay is None else args.g_fc_lay
@@ -136,6 +139,7 @@ if __name__ == '__main__':
     args.ewc_lambda = 5000.
     args.si = False
     args.si_c = 0.1
+    args.xdg = False
     args.gating_prop = 0.
     args.feedback = False
     args.log_per_task = True

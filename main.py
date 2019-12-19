@@ -17,6 +17,7 @@ from train import train_cl
 from continual_learner import ContinualLearner
 from exemplars import ExemplarHandler
 from replayer import Replayer
+from param_values import set_default_values
 
 
 parser = argparse.ArgumentParser('./main.py', description='Run individual continual learning experiment.')
@@ -31,7 +32,7 @@ parser.add_argument('--results-dir', type=str, default='./results', dest='r_dir'
 task_params = parser.add_argument_group('Task Parameters')
 task_params.add_argument('--experiment', type=str, default='splitMNIST', choices=['permMNIST', 'splitMNIST'])
 task_params.add_argument('--scenario', type=str, default='class', choices=['task', 'domain', 'class'])
-task_params.add_argument('--tasks', type=int, default=5, help='number of tasks')
+task_params.add_argument('--tasks', type=int, help='number of tasks')
 
 # specify loss functions to be used
 loss_params = parser.add_argument_group('Loss Parameters')
@@ -42,7 +43,7 @@ loss_params.add_argument('--bce-distill', action='store_true', help='distilled l
 # model architecture parameters
 model_params = parser.add_argument_group('Model Parameters')
 model_params.add_argument('--fc-layers', type=int, default=3, dest='fc_lay', help="# of fully-connected layers")
-model_params.add_argument('--fc-units', type=int, default=400, metavar="N", help="# of units in first fc-layers")
+model_params.add_argument('--fc-units', type=int, metavar="N", help="# of units in first fc-layers")
 model_params.add_argument('--fc-drop', type=float, default=0., help="dropout probability for fc-units")
 model_params.add_argument('--fc-bn', type=str, default="no", help="use batch-norm in the fc-layers (no|yes)")
 model_params.add_argument('--fc-nl', type=str, default="relu", choices=["relu", "leakyrelu"])
@@ -51,8 +52,8 @@ model_params.add_argument('--singlehead', action='store_true', help="for Task-IL
 
 # training hyperparameters / initialization
 train_params = parser.add_argument_group('Training Parameters')
-train_params.add_argument('--iters', type=int, default=2000, help="# batches to optimize solver")
-train_params.add_argument('--lr', type=float, default=0.001, help="learning rate")
+train_params.add_argument('--iters', type=int, help="# batches to optimize solver")
+train_params.add_argument('--lr', type=float, help="learning rate")
 train_params.add_argument('--batch', type=int, default=128, help="batch-size")
 train_params.add_argument('--optimizer', type=str, choices=['adam', 'adam_reset', 'sgd'], default='adam')
 
@@ -77,15 +78,16 @@ gen_params.add_argument('--lr-gen', type=float, help="learning rate generator (d
 # "memory allocation" parameters
 cl_params = parser.add_argument_group('Memory Allocation Parameters')
 cl_params.add_argument('--ewc', action='store_true', help="use 'EWC' (Kirkpatrick et al, 2017)")
-cl_params.add_argument('--lambda', type=float, default=5000.,dest="ewc_lambda", help="--> EWC: regularisation strength")
+cl_params.add_argument('--lambda', type=float, dest="ewc_lambda", help="--> EWC: regularisation strength")
 cl_params.add_argument('--fisher-n', type=int, help="--> EWC: sample size estimating Fisher Information")
 cl_params.add_argument('--online', action='store_true', help="--> EWC: perform 'online EWC'")
-cl_params.add_argument('--gamma', type=float, default=1., help="--> EWC: forgetting coefficient (for 'online EWC')")
+cl_params.add_argument('--gamma', type=float, help="--> EWC: forgetting coefficient (for 'online EWC')")
 cl_params.add_argument('--emp-fi', action='store_true', help="--> EWC: estimate FI with provided labels")
 cl_params.add_argument('--si', action='store_true', help="use 'Synaptic Intelligence' (Zenke, Poole et al, 2017)")
-cl_params.add_argument('--c', type=float, default=0.1, dest="si_c", help="--> SI: regularisation strength")
+cl_params.add_argument('--c', type=float, dest="si_c", help="--> SI: regularisation strength")
 cl_params.add_argument('--epsilon', type=float, default=0.1, dest="epsilon", help="--> SI: dampening parameter")
-cl_params.add_argument('--xdg', type=float, default=0., dest="gating_prop",help="XdG: prop neurons per layer to gate")
+cl_params.add_argument('--xdg', action='store_true', help="Use 'Context-dependent Gating' (Masse et al, 2018)")
+cl_params.add_argument('--gating-prop', type=float, metavar="PROP", help="--> XdG: prop neurons per layer to gate")
 
 # exemplar parameters
 icarl_params = parser.add_argument_group('Exemplar Parameters')
@@ -111,7 +113,10 @@ eval_params.add_argument('--sample-n', type=int, default=64, help="# images to s
 
 def run(args):
 
-    # Set default arguments
+    # Set default-values for certain arguments based on chosen scenario & experiment
+    args = set_default_values(args)
+
+    # Set other default arguments & check for incompatible options
     args.lr_gen = args.lr if args.lr_gen is None else args.lr_gen
     args.g_iters = args.iters if args.g_iters is None else args.g_iters
     args.g_fc_lay = args.fc_lay if args.g_fc_lay is None else args.g_fc_lay
@@ -128,16 +133,16 @@ def run(args):
         args.bce = True
         args.bce_distill = True
     # -if XdG is selected but not the Task-IL scenario, give error
-    if (not args.scenario=="task") and args.gating_prop>0:
+    if (not args.scenario=="task") and args.xdg:
         raise ValueError("'XdG' is only compatible with the Task-IL scenario.")
     # -if EWC, SI or XdG is selected together with 'feedback', give error
-    if args.feedback and (args.ewc or args.si or args.gating_prop>0 or args.icarl):
+    if args.feedback and (args.ewc or args.si or args.xdg or args.icarl):
         raise NotImplementedError("EWC, SI, XdG and iCaRL are not supported with feedback connections.")
     # -if binary classification loss is selected together with 'feedback', give error
     if args.feedback and args.bce:
         raise NotImplementedError("Binary classification loss not supported with feedback connections.")
     # -if XdG is selected together with both replay and EWC, give error (either one of them alone with XdG is fine)
-    if args.gating_prop>0 and (not args.replay=="none") and (args.ewc or args.si):
+    if args.xdg and (not args.replay=="none") and (args.ewc or args.si):
         raise NotImplementedError("XdG is not supported with both '{}' replay and EWC / SI.".format(args.replay))
         #--> problem is that applying different task-masks interferes with gradient calculation
         #    (should be possible to overcome by calculating backward step on EWC/SI-loss also for each mask separately)
@@ -203,7 +208,7 @@ def run(args):
         model = Classifier(
             image_size=config['size'], image_channels=config['channels'], classes=config['classes'],
             fc_layers=args.fc_lay, fc_units=args.fc_units, fc_drop=args.fc_drop, fc_nl=args.fc_nl,
-            fc_bn=True if args.fc_bn=="yes" else False, excit_buffer=True if args.gating_prop>0 else False,
+            fc_bn=True if args.fc_bn=="yes" else False, excit_buffer=True if args.xdg and args.gating_prop>0 else False,
             binaryCE=args.bce, binaryCE_distill=args.bce_distill,
         ).to(device)
 
@@ -253,7 +258,7 @@ def run(args):
             model.epsilon = args.epsilon
 
     # XdG: create for every task a "mask" for each hidden fully connected layer
-    if isinstance(model, ContinualLearner) and args.gating_prop>0:
+    if isinstance(model, ContinualLearner) and (args.xdg and args.gating_prop>0):
         mask_dict = {}
         excit_buffer_list = []
         for task_id in range(args.tasks):
@@ -331,7 +336,7 @@ def run(args):
             fb="1M-" if args.feedback else "", replay="{}{}".format(args.replay, "D" if args.distill else ""),
             syn="-si{}".format(args.si_c) if args.si else "",
             ewc="-ewc{}{}".format(args.ewc_lambda,"-O{}".format(args.gamma) if args.online else "") if args.ewc else "",
-            xdg="" if args.gating_prop==0 else "-XdG{}".format(args.gating_prop),
+            xdg="" if (not args.xdg) or args.gating_prop==0 else "-XdG{}".format(args.gating_prop),
             icarl="-iCaRL" if (args.use_exemplars and args.add_exemplars and args.bce and args.bce_distill) else "",
             bud="-bud{}".format(args.budget) if (
                     args.use_exemplars or args.add_exemplars or args.replay=="exemplars"
@@ -518,5 +523,7 @@ def run(args):
 
 
 if __name__ == '__main__':
+    # -load input-arguments
     args = parser.parse_args()
+    # -run experiment
     run(args)
