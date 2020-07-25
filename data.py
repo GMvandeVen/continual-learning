@@ -31,7 +31,7 @@ def get_dataset(name, type='train', download=True, capacity=None, permutation=No
     # specify image-transformations to be applied
     dataset_transform = transforms.Compose([
         *AVAILABLE_TRANSFORMS[name],
-        transforms.Lambda(lambda x: _permutate_image_pixels(x, permutation)),
+        transforms.Lambda(lambda x, p=permutation: _permutate_image_pixels(x, p)),
     ])
 
     # load data-set
@@ -44,7 +44,8 @@ def get_dataset(name, type='train', download=True, capacity=None, permutation=No
 
     # if dataset is (possibly) not large enough, create copies until it is.
     if capacity is not None and len(dataset) < capacity:
-        dataset = ConcatDataset([copy.deepcopy(dataset) for _ in range(int(np.ceil(capacity / len(dataset))))])
+        dataset_copy = copy.deepcopy(dataset)
+        dataset = ConcatDataset([dataset_copy for _ in range(int(np.ceil(capacity / len(dataset))))])
 
     return dataset
 
@@ -63,16 +64,11 @@ class SubDataset(Dataset):
         self.dataset = original_dataset
         self.sub_indeces = []
         for index in range(len(self.dataset)):
-            if hasattr(original_dataset, "train_labels"):
+            if hasattr(original_dataset, "targets"):
                 if self.dataset.target_transform is None:
-                    label = self.dataset.train_labels[index]
+                    label = self.dataset.targets[index]
                 else:
-                    label = self.dataset.target_transform(self.dataset.train_labels[index])
-            elif hasattr(self.dataset, "test_labels"):
-                if self.dataset.target_transform is None:
-                    label = self.dataset.test_labels[index]
-                else:
-                    label = self.dataset.target_transform(self.dataset.test_labels[index])
+                    label = self.dataset.target_transform(self.dataset.targets[index])
             else:
                 label = self.dataset[index][1]
             if label in sub_labels:
@@ -120,6 +116,27 @@ class ExemplarDataset(Dataset):
         return (image, class_id_to_return)
 
 
+class TransformedDataset(Dataset):
+    '''Modify existing dataset with transform; for creating multiple MNIST-permutations w/o loading data every time.'''
+
+    def __init__(self, original_dataset, transform=None, target_transform=None):
+        super().__init__()
+        self.dataset = original_dataset
+        self.transform = transform
+        self.target_transform = target_transform
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        (input, target) = self.dataset[index]
+        if self.transform:
+            input = self.transform(input)
+        if self.target_transform:
+            target = self.target_transform(target)
+        return (input, target)
+
+
 #----------------------------------------------------------------------------------------------------------#
 
 
@@ -162,22 +179,31 @@ def get_multitask_experiment(name, scenario, tasks, data_dir="./datasets", only_
         config = DATASET_CONFIGS['mnist']
         classes_per_task = 10
         if not only_config:
+            # prepare dataset
+            train_dataset = get_dataset('mnist', type="train", permutation=None, dir=data_dir,
+                                        target_transform=None, verbose=verbose)
+            test_dataset = get_dataset('mnist', type="test", permutation=None, dir=data_dir,
+                                       target_transform=None, verbose=verbose)
             # generate permutations
             if exception:
                 permutations = [None] + [np.random.permutation(config['size']**2) for _ in range(tasks-1)]
             else:
                 permutations = [np.random.permutation(config['size']**2) for _ in range(tasks)]
-            # prepare datasets
+            # prepare datasets per task
             train_datasets = []
             test_datasets = []
-            for task_id, p in enumerate(permutations):
+            for task_id, perm in enumerate(permutations):
                 target_transform = transforms.Lambda(
                     lambda y, x=task_id: y + x*classes_per_task
                 ) if scenario in ('task', 'class') else None
-                train_datasets.append(get_dataset('mnist', type="train", permutation=p, dir=data_dir,
-                                                  target_transform=target_transform, verbose=verbose))
-                test_datasets.append(get_dataset('mnist', type="test", permutation=p, dir=data_dir,
-                                                 target_transform=target_transform, verbose=verbose))
+                train_datasets.append(TransformedDataset(
+                    train_dataset, transform=transforms.Lambda(lambda x, p=perm: _permutate_image_pixels(x, p)),
+                    target_transform=target_transform
+                ))
+                test_datasets.append(TransformedDataset(
+                    test_dataset, transform=transforms.Lambda(lambda x, p=perm: _permutate_image_pixels(x, p)),
+                    target_transform=target_transform
+                ))
     elif name == 'splitMNIST':
         # check for number of tasks
         if tasks>10:
@@ -188,7 +214,7 @@ def get_multitask_experiment(name, scenario, tasks, data_dir="./datasets", only_
         if not only_config:
             # prepare permutation to shuffle label-ids (to create different class batches for each random seed)
             permutation = np.array(list(range(10))) if exception else np.random.permutation(list(range(10)))
-            target_transform = transforms.Lambda(lambda y, x=permutation: int(permutation[y]))
+            target_transform = transforms.Lambda(lambda y, p=permutation: int(p[y]))
             # prepare train and test datasets with all classes
             mnist_train = get_dataset('mnist28', type="train", dir=data_dir, target_transform=target_transform,
                                       verbose=verbose)

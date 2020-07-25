@@ -37,8 +37,8 @@ For information on further options: `./main.py -h`.
 Class-IL) and provides an extensive comparion of recently proposed continual learning methods. It uses the permuted and
 split MNIST task protocols, with both performed according to all three scenarios.
 
-A comparison of all methods included in this paper can be run with `_compare.py`. The
-comparison in Appendix B can be run with `_compare_taskID.py`, and Figure C.1 can be recreated with `_compare_replay.py`.
+A comparison of all methods included in this paper can be run with `compare.py`. The
+comparison in Appendix B can be run with `compare_taskID.py`, and Figure C.1 can be recreated with `compare_replay.py`.
 
 #### "Replay-through-Feedback"-paper
 The three continual learning scenarios were actually first identified in [this paper](https://arxiv.org/abs/1809.10635),
@@ -46,7 +46,7 @@ after which this paper introduces the Replay-through-Feedback framework as a mor
 replay. 
 
 A comparison of all methods included in this paper can be run with
-`_compare_time.py`. This includes a comparison of the time these methods take to train (Figures 4 and 5).
+`compare_time.py`. This includes a comparison of the time these methods take to train (Figures 4 and 5).
 
 We should note that the results reported in this paper were obtained with
 [this earlier version](https://github.com/GMvandeVen/continual-learning/tree/9c0ca78f43c29594b376ca59516031fcdaa5d7ba)

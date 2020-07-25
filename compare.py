@@ -9,7 +9,7 @@ from param_values import set_default_values
 
 
 description = 'Compare performance of CL strategies on each scenario of permuted or split MNIST.'
-parser = argparse.ArgumentParser('./_compare.py', description=description)
+parser = argparse.ArgumentParser('./compare.py', description=description)
 parser.add_argument('--seed', type=int, default=1, help='[first] random seed (for each random-module used)')
 parser.add_argument('--n-seeds', type=int, default=1, help='how often to repeat?')
 parser.add_argument('--no-gpus', action='store_false', dest='cuda', help="don't use GPUs")
