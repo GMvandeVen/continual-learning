@@ -26,6 +26,8 @@ To run specific methods, use the following:
 - Deep Generative Replay (DGR): `./main.py --replay=generative`
 - DGR with distillation: `./main.py --replay=generative --distill`
 - Replay-trough-Feedback (RtF): `./main.py --replay=generative --distill --feedback`
+- Experience Replay (ER): `./main.py --replay=exemplars --budget=2000`
+- Averaged Gradient Episodic Memory (A-GEM): `./main.py --replay=exemplars --agem --budget=2000`
 - iCaRL: `./main.py --icarl --budget=2000`
 
 For information on further options: `./main.py -h`.

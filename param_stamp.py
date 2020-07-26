@@ -29,7 +29,6 @@ def get_param_stamp_from_args(args):
             image_size=config['size'], image_channels=config['channels'], classes=config['classes'],
             fc_layers=args.fc_lay, fc_units=args.fc_units, fc_drop=args.fc_drop, fc_nl=args.fc_nl,
             fc_bn=True if args.fc_bn=="yes" else False, excit_buffer=True if args.xdg and args.gating_prop>0 else False,
-            binaryCE=args.bce, binaryCE_distill=args.bce_distill,
         )
 
     train_gen = True if (args.replay=="generative" and not args.feedback) else False
@@ -97,9 +96,10 @@ def get_param_stamp(args, model_name, verbose=True, replay=False, replay_model_n
 
     # -for replay
     if replay:
-        replay_stamp = "{rep}{KD}{model}{gi}".format(
+        replay_stamp = "{rep}{KD}{agem}{model}{gi}".format(
             rep=args.replay,
             KD="-KD{}".format(args.temp) if args.distill else "",
+            agem="-aGEM" if args.agem else "",
             model="" if (replay_model_name is None) else "-{}".format(replay_model_name),
             gi="-gi{}".format(args.gen_iters) if (
                 hasattr(args, "gen_iters") and (replay_model_name is not None) and (not args.iters==args.gen_iters)

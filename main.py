@@ -65,6 +65,7 @@ replay_choices = ['offline', 'exact', 'generative', 'none', 'current', 'exemplar
 replay_params.add_argument('--replay', type=str, default='none', choices=replay_choices)
 replay_params.add_argument('--distill', action='store_true', help="use distillation for replay?")
 replay_params.add_argument('--temp', type=float, default=2., dest='temp', help="temperature for distillation")
+replay_params.add_argument('--agem', action='store_true', help="use gradient of replay as inequality constraint")
 # -generative model parameters (if separate model)
 genmodel_params = parser.add_argument_group('Generative Model Parameters')
 genmodel_params.add_argument('--g-z-dim', type=int, default=100, help='size of latent representation (default: 100)')
@@ -132,14 +133,21 @@ def run(args):
     # -if XdG is selected but not the Task-IL scenario, give error
     if (not args.scenario=="task") and args.xdg:
         raise ValueError("'XdG' is only compatible with the Task-IL scenario.")
-    # -if EWC, SI or XdG is selected together with 'feedback', give error
-    if args.feedback and (args.ewc or args.si or args.xdg or args.icarl):
-        raise NotImplementedError("EWC, SI, XdG and iCaRL are not supported with feedback connections.")
+    # -if EWC, SI, XdG, A-GEM or iCaRL is selected together with 'feedback', give error
+    if args.feedback and (args.ewc or args.si or args.xdg or args.icarl or args.agem):
+        raise NotImplementedError("EWC, SI, XdG, A-GEM and iCaRL are not supported with feedback connections.")
+    # -if A-GEM is selected without any replay, give warning
+    if args.agem and args.replay=="none":
+        raise Warning("The '--agem' flag is selected, but without any type of replay. "
+                      "For the original A-GEM method, also select --replay='exemplars'.")
+    # -if EWC, SI, XdG, A-GEM or iCaRL is selected together with offline-replay, give error
+    if args.replay=="offline" and (args.ewc or args.si or args.xdg or args.icarl or args.agem):
+        raise NotImplementedError("Offline replay cannot be combined with EWC, SI, XdG, A-GEM or iCaRL.")
     # -if binary classification loss is selected together with 'feedback', give error
     if args.feedback and args.bce:
         raise NotImplementedError("Binary classification loss not supported with feedback connections.")
     # -if XdG is selected together with both replay and EWC, give error (either one of them alone with XdG is fine)
-    if args.xdg and (not args.replay=="none") and (args.ewc or args.si):
+    if (args.xdg and args.gating_prop>0) and (not args.replay=="none") and (args.ewc or args.si):
         raise NotImplementedError("XdG is not supported with both '{}' replay and EWC / SI.".format(args.replay))
         #--> problem is that applying different task-masks interferes with gradient calculation
         #    (should be possible to overcome by calculating backward step on EWC/SI-loss also for each mask separately)
@@ -206,7 +214,7 @@ def run(args):
             image_size=config['size'], image_channels=config['channels'], classes=config['classes'],
             fc_layers=args.fc_lay, fc_units=args.fc_units, fc_drop=args.fc_drop, fc_nl=args.fc_nl,
             fc_bn=True if args.fc_bn=="yes" else False, excit_buffer=True if args.xdg and args.gating_prop>0 else False,
-            binaryCE=args.bce, binaryCE_distill=args.bce_distill,
+            binaryCE=args.bce, binaryCE_distill=args.bce_distill, AGEM=args.agem,
         ).to(device)
 
     # Define optimizer (only include parameters that "requires_grad")
@@ -330,7 +338,8 @@ def run(args):
     if args.visdom:
         env_name = "{exp}{tasks}-{scenario}".format(exp=args.experiment, tasks=args.tasks, scenario=args.scenario)
         graph_name = "{fb}{replay}{syn}{ewc}{xdg}{icarl}{bud}".format(
-            fb="1M-" if args.feedback else "", replay="{}{}".format(args.replay, "D" if args.distill else ""),
+            fb="1M-" if args.feedback else "",
+            replay="{}{}{}".format(args.replay, "D" if args.distill else "", "-aGEM" if args.agem else ""),
             syn="-si{}".format(args.si_c) if args.si else "",
             ewc="-ewc{}{}".format(args.ewc_lambda,"-O{}".format(args.gamma) if args.online else "") if args.ewc else "",
             xdg="" if (not args.xdg) or args.gating_prop==0 else "-XdG{}".format(args.gating_prop),
