@@ -159,12 +159,11 @@ def count_parameters(model, verbose=True):
 
 def print_model_info(model, title="MODEL"):
     '''Print information on [model] onto the screen.'''
-    print("Model-name: \"" + model.name + "\"")
-    print(40*"-" + title + 40*"-")
+    print("\n" + 40*"-" + title + 40*"-")
     print(model)
     print(90*"-")
     _ = count_parameters(model)
-    print(90*"-" + "\n\n")
+    print(90*"-")
 
 
 

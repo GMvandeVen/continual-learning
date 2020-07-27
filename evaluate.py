@@ -62,28 +62,17 @@ def validate(model, dataset, batch_size=128, test_size=1024, verbose=True, allow
     return precision
 
 
-def initiate_precision_dict(n_tasks):
-    '''Initiate <dict> with all precision-measures to keep track of.'''
-    precision = {}
-    precision["all_tasks"] = [[] for _ in range(n_tasks)]
-    precision["average"] = []
-    precision["x_iteration"] = []
-    precision["x_task"] = []
-    return precision
-
-
-def precision(model, datasets, current_task, iteration, classes_per_task=None, scenario="class",
-              precision_dict=None, test_size=None, visdom=None, verbose=False, summary_graph=True,
-              with_exemplars=False, no_task_mask=False):
+def precision(model, datasets, current_task, iteration, classes_per_task=None, scenario="domain",
+              test_size=None, visdom=None, verbose=False, summary_graph=True, with_exemplars=False, no_task_mask=False):
     '''Evaluate precision of a classifier (=[model]) on all tasks so far (= up to [current_task]) using [datasets].
 
-    [precision_dict]    None or <dict> of all measures to keep track of, to which results will be appended to
     [classes_per_task]  <int> number of active classes er task
     [scenario]          <str> how to decide which classes to include during evaluating precision
     [visdom]            None or <dict> with name of "graph" and "env" (if None, no visdom-plots are made)'''
 
-    # Evaluate accuracy of model predictions for all tasks so far (reporting "0" for future tasks)
     n_tasks = len(datasets)
+
+    # Evaluate accuracy of model predictions for all tasks so far (reporting "0" for future tasks)
     precs = []
     for i in range(n_tasks):
         if i+1 <= current_task:
@@ -117,14 +106,168 @@ def precision(model, datasets, current_task, iteration, classes_per_task=None, s
                 iteration=iteration, env=visdom["env"], ylabel="test precision"
             )
 
-    # Append results to [progress]-dictionary and return
-    if precision_dict is not None:
-        for task_id, _ in enumerate(names):
-            precision_dict["all_tasks"][task_id].append(precs[task_id])
-        precision_dict["average"].append(average_precs)
-        precision_dict["x_iteration"].append(iteration)
-        precision_dict["x_task"].append(current_task)
-    return precision_dict
+
+
+####--------------------------------------------------------------------------------------------------------------####
+
+####---------------------------####
+####----METRIC CALCULATIONS----####
+####---------------------------####
+
+
+def initiate_metrics_dict(n_tasks, scenario):
+    '''Initiate <dict> with all measures to keep track of.'''
+    metrics_dict = {}
+    metrics_dict["average"] = []     # ave acc over all tasks so far: Task-IL -> only classes in task
+                                     #                                Class-IL-> all classes so far (up to trained task)
+    metrics_dict["x_iteration"] = [] # total number of iterations so far
+    metrics_dict["x_task"] = []      # number of tasks so far (indicating the task on which training just finished)
+    # Accuracy matrix
+    if not scenario=="class":
+        # -in the domain-incremetnal learning scenario, each task has the same classes
+        # -in the task-incremental learning scenario, only the classes within each task are considered
+        metrics_dict["acc per task"] = {}
+        for i in range(n_tasks):
+            metrics_dict["acc per task"]["task {}".format(i+1)] = []
+    else:
+        # -in the class-incremental learning scenario, accuracy matrix can be defined in different ways
+        metrics_dict["acc per task (only classes in task)"] = {}
+        metrics_dict["acc per task (all classes up to trained task)"] = {}
+        metrics_dict["acc per task (all classes up to evaluated task)"] = {}
+        metrics_dict["acc per task (all classes)"] = {}
+        for i in range(n_tasks):
+            metrics_dict["acc per task (only classes in task)"]["task {}".format(i+1)] = []
+            metrics_dict["acc per task (all classes up to trained task)"]["task {}".format(i + 1)] = []
+            metrics_dict["acc per task (all classes up to evaluated task)"]["task {}".format(i + 1)] = []
+            metrics_dict["acc per task (all classes)"]["task {}".format(i + 1)] = []
+    return metrics_dict
+
+
+def intial_accuracy(model, datasets, metrics_dict, classes_per_task=None, scenario="domain", test_size=None,
+                    verbose=False, no_task_mask=False):
+    '''Evaluate precision of a classifier (=[model]) on all tasks using [datasets] before any learning.'''
+
+    n_tasks = len(datasets)
+
+    if not scenario=="class":
+        precs = []
+    else:
+        precs_all_classes = []
+        precs_only_classes_in_task = []
+        precs_all_classes_upto_task = []
+
+    for i in range(n_tasks):
+        if not scenario=="class":
+            precision = validate(
+                model, datasets[i], test_size=test_size, verbose=verbose,
+                allowed_classes=None if scenario=="domain" else list(range(classes_per_task*i, classes_per_task*(i+1))),
+                no_task_mask=no_task_mask, task=i+1
+            )
+            precs.append(precision)
+        else:
+            # -all classes
+            precision = validate(model, datasets[i], test_size=test_size, verbose=verbose, allowed_classes=None,
+                                 no_task_mask=no_task_mask, task=i + 1)
+            precs_all_classes.append(precision)
+            # -only classes in task
+            allowed_classes = list(range(classes_per_task * i, classes_per_task * (i + 1)))
+            precision = validate(model, datasets[i], test_size=test_size, verbose=verbose,
+                                 allowed_classes=allowed_classes, no_task_mask=no_task_mask, task=i + 1)
+            precs_only_classes_in_task.append(precision)
+            # -classes up to evaluated task
+            allowed_classes = list(range(classes_per_task * (i + 1)))
+            precision = validate(model, datasets[i], test_size=test_size, verbose=verbose,
+                                 allowed_classes=allowed_classes, no_task_mask=no_task_mask, task=i + 1)
+            precs_all_classes_upto_task.append(precision)
+
+    if not scenario=="class":
+        metrics_dict["initial acc per task"] = precs
+    else:
+        metrics_dict["initial acc per task (all classes)"] = precs_all_classes
+        metrics_dict["initial acc per task (only classes in task)"] = precs_only_classes_in_task
+        metrics_dict["initial acc per task (all classes up to evaluated task)"] = precs_all_classes_upto_task
+    return metrics_dict
+
+
+def metric_statistics(model, datasets, current_task, iteration, classes_per_task=None, scenario="domain",
+                      metrics_dict=None, test_size=None, verbose=False, with_exemplars=False, no_task_mask=False):
+    '''Evaluate precision of a classifier (=[model]) on all tasks so far (= up to [current_task]) using [datasets].
+
+    [metrics_dict]      None or <dict> of all measures to keep track of, to which results will be appended to
+    [classes_per_task]  <int> number of active classes er task
+    [scenario]          <str> how to decide which classes to include during evaluating precision'''
+
+    n_tasks = len(datasets)
+
+    # Calculate accurcies per task, possibly in various ways (if Class-IL scenario)
+    precs_all_classes = []
+    precs_all_classes_so_far = []
+    precs_only_classes_in_task = []
+    precs_all_classes_upto_task = []
+    for i in range(n_tasks):
+        # -all classes
+        if scenario in ('domain', 'class'):
+            precision = validate(
+                model, datasets[i], test_size=test_size, verbose=verbose, allowed_classes=None,
+                no_task_mask=no_task_mask, task=i + 1, with_exemplars=with_exemplars
+            ) if (not with_exemplars) or (i<current_task) else 0.
+            precs_all_classes.append(precision)
+        # -all classes up to trained task
+        if scenario in ('class'):
+            allowed_classes = list(range(classes_per_task * current_task))
+            precision = validate(model, datasets[i], test_size=test_size, verbose=verbose,
+                                 allowed_classes=allowed_classes, no_task_mask=no_task_mask, task=i + 1,
+                                 with_exemplars=with_exemplars) if (i<current_task) else 0.
+            precs_all_classes_so_far.append(precision)
+        # -all classes up to evaluated task
+        if scenario in ('class'):
+            allowed_classes = list(range(classes_per_task * (i+1)))
+            precision = validate(model, datasets[i], test_size=test_size, verbose=verbose,
+                                 allowed_classes=allowed_classes, no_task_mask=no_task_mask, task=i + 1,
+                                 with_exemplars=with_exemplars) if (not with_exemplars) or (i<current_task) else 0.
+            precs_all_classes_upto_task.append(precision)
+        # -only classes in that task
+        if scenario in ('task', 'class'):
+            allowed_classes = list(range(classes_per_task * i, classes_per_task * (i + 1)))
+            precision = validate(model, datasets[i], test_size=test_size, verbose=verbose,
+                                 allowed_classes=allowed_classes, no_task_mask=no_task_mask, task=i + 1,
+                                 with_exemplars=with_exemplars) if (not with_exemplars) or (i<current_task) else 0.
+            precs_only_classes_in_task.append(precision)
+
+    # Calcualte average accuracy over all tasks thus far
+    if scenario=='task':
+        average_precs = sum([precs_only_classes_in_task[task_id] for task_id in range(current_task)]) / current_task
+    elif scenario=='domain':
+        average_precs = sum([precs_all_classes[task_id] for task_id in range(current_task)]) / current_task
+    elif scenario=='class':
+        average_precs = sum([precs_all_classes_so_far[task_id] for task_id in range(current_task)]) / current_task
+
+    # Append results to [metrics_dict]-dictionary
+    for task_id in range(n_tasks):
+        if scenario=="task":
+            metrics_dict["acc per task"]["task {}".format(task_id+1)].append(precs_only_classes_in_task[task_id])
+        elif scenario=="domain":
+            metrics_dict["acc per task"]["task {}".format(task_id+1)].append(precs_all_classes[task_id])
+        else:
+            metrics_dict["acc per task (all classes)"]["task {}".format(task_id+1)].append(precs_all_classes[task_id])
+            metrics_dict["acc per task (all classes up to trained task)"]["task {}".format(task_id+1)].append(
+                precs_all_classes_so_far[task_id]
+            )
+            metrics_dict["acc per task (all classes up to evaluated task)"]["task {}".format(task_id+1)].append(
+                precs_all_classes_upto_task[task_id]
+            )
+            metrics_dict["acc per task (only classes in task)"]["task {}".format(task_id+1)].append(
+                precs_only_classes_in_task[task_id]
+            )
+    metrics_dict["average"].append(average_precs)
+    metrics_dict["x_iteration"].append(iteration)
+    metrics_dict["x_task"].append(current_task)
+
+    # Print results on screen
+    if verbose:
+        print(' => ave precision: {:.3f}'.format(average_precs))
+
+    return metrics_dict
 
 
 

@@ -68,7 +68,7 @@ cl_params.add_argument('--gating-prop', type=float, metavar="PROP", help="--> Xd
 # exemplar parameters
 exemplar_params = parser.add_argument_group('Exemplar Parameters')
 exemplar_params.add_argument('--use-exemplars', action='store_true', help="use stored exemplars for classification?")
-exemplar_params.add_argument('--budget', type=int, default=2000, dest="budget",help="how many exemplars can be stored?")
+exemplar_params.add_argument('--budget', type=int, default=1000, dest="budget",help="how many exemplars can be stored?")
 exemplar_params.add_argument('--herding',action='store_true',help="use herding to select exemplars (instead of random)")
 exemplar_params.add_argument('--norm-exemplars', action='store_true', help="normalize features/averages of exemplars")
 
@@ -81,15 +81,17 @@ eval_params.add_argument('--sample-n', type=int, default=64, help="# images to s
 
 
 
-def get_prec(args, ext=""):
+def get_prec(args):
     # -get param-stamp
     param_stamp = get_param_stamp_from_args(args)
     # -check whether already run; if not do so
-    if not os.path.isfile('{}/prec{}-{}.txt'.format(args.r_dir, ext, param_stamp)):
-        print(" ...running: ... ")
+    if os.path.isfile("{}/prec-{}.txt".format(args.r_dir, param_stamp)):
+        print("{}: already run".format(param_stamp))
+    else:
+        print("{}: ...running...".format(param_stamp))
         main.run(args)
     # -get average precision
-    fileName = '{}/prec{}-{}.txt'.format(args.r_dir, ext, param_stamp)
+    fileName = '{}/prec-{}.txt'.format(args.r_dir, param_stamp)
     file = open(fileName)
     ave = float(file.readline())
     file.close()
@@ -99,14 +101,14 @@ def get_prec(args, ext=""):
     return ave
 
 
-def collect_all(method_dict, seed_list, args, ext="", name=None):
+def collect_all(method_dict, seed_list, args, name=None):
     # -print name of method on screen
     if name is not None:
         print("\n------{}------".format(name))
     # -run method for all random seeds
     for seed in seed_list:
         args.seed = seed
-        method_dict[seed] = get_prec(args, ext=ext)
+        method_dict[seed] = get_prec(args)
     # -return updated dictionary with results
     return method_dict
 
@@ -133,12 +135,15 @@ if __name__ == '__main__':
         os.mkdir(args.p_dir)
 
     ## Add non-optional input argument that will be the same for all runs
+    args.agem = False
     args.feedback = False
     args.add_exemplars = False
     args.bce_distill= False
     args.icarl = False
     args.log_per_task = True
-
+    args.time = False
+    args.metrics = False
+    
     ## Add input arguments that will be different for different runs
     args.distill = False
     args.ewc = False

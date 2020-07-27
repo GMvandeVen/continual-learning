@@ -5,7 +5,6 @@ import numpy as np
 import tqdm
 import copy
 import utils
-import time
 from data import SubDataset, ExemplarDataset
 from continual_learner import ContinualLearner
 
@@ -13,7 +12,7 @@ from continual_learner import ContinualLearner
 
 def train_cl(model, train_datasets, replay_mode="none", scenario="class",classes_per_task=None,iters=2000,batch_size=32,
              generator=None, gen_iters=0, gen_loss_cbs=list(), loss_cbs=list(), eval_cbs=list(), sample_cbs=list(),
-             use_exemplars=True, add_exemplars=False, eval_cbs_exemplars=list()):
+             use_exemplars=True, add_exemplars=False, metric_cbs=list()):
     '''Train a model (with a "train_a_batch" method) on multiple tasks, with replay-strategy specified by [replay_mode].
 
     [model]             <nn.Module> main model to optimize across all tasks
@@ -310,17 +309,16 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class",classes
             new_classes = list(range(classes_per_task)) if scenario=="domain" else list(range(classes_per_task*(task-1),
                                                                                               classes_per_task*task))
             for class_id in new_classes:
-                start = time.time()
                 # create new dataset containing only all examples of this class
                 class_dataset = SubDataset(original_dataset=train_dataset, sub_labels=[class_id])
                 # based on this dataset, construct new exemplar-set for this class
                 model.construct_exemplar_set(dataset=class_dataset, n=exemplars_per_class)
-                print("Constructed exemplar-set for class {}: {} seconds".format(class_id, round(time.time()-start)))
             model.compute_means = True
-            # evaluate this way of classifying on test set
-            for eval_cb in eval_cbs_exemplars:
-                if eval_cb is not None:
-                    eval_cb(model, iters, task=task)
+
+        # Calculate statistics required for metrics
+        for metric_cb in metric_cbs:
+            if metric_cb is not None:
+                metric_cb(model, iters, task=task)
 
         # REPLAY: update source for replay
         previous_model = copy.deepcopy(model).eval()

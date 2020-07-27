@@ -19,12 +19,12 @@ Individual experiments can be run with `main.py`. Main options are:
 
 To run specific methods, use the following:
 - Context-dependent-Gating (XdG): `./main.py --xdg=0.8`
-- Elastic weight consolidation (EWC): `./main.py --ewc --lambda=5000`
+- Elastic Weight Consolidation (EWC): `./main.py --ewc --lambda=5000`
 - Online EWC:  `./main.py --ewc --online --lambda=5000 --gamma=1`
-- Synaptic intelligenc (SI): `./main.py --si --c=0.1`
+- Synaptic Intelligence (SI): `./main.py --si --c=0.1`
 - Learning without Forgetting (LwF): `./main.py --replay=current --distill`
-- Deep Generative Replay (DGR): `./main.py --replay=generative`
-- DGR with distillation: `./main.py --replay=generative --distill`
+- Generative Replay (GR): `./main.py --replay=generative`
+- GR with distillation: `./main.py --replay=generative --distill`
 - Replay-trough-Feedback (RtF): `./main.py --replay=generative --distill --feedback`
 - Experience Replay (ER): `./main.py --replay=exemplars --budget=2000`
 - Averaged Gradient Episodic Memory (A-GEM): `./main.py --replay=exemplars --agem --budget=2000`
@@ -39,8 +39,9 @@ For information on further options: `./main.py -h`.
 Class-IL) and provides an extensive comparion of recently proposed continual learning methods. It uses the permuted and
 split MNIST task protocols, with both performed according to all three scenarios.
 
-A comparison of all methods included in this paper can be run with `compare.py`. The
-comparison in Appendix B can be run with `compare_taskID.py`, and Figure C.1 can be recreated with `compare_replay.py`.
+A comparison of all methods included in this paper can be run with `compare_all.py` (this script includes extra
+methods and reports additional metrics compared to the paper). The comparison in Appendix B can be run with
+`compare_taskID.py`, and Figure C.1 can be recreated with `compare_replay.py`.
 
 #### "Replay-through-Feedback"-paper
 The three continual learning scenarios were actually first identified in [this paper](https://arxiv.org/abs/1809.10635),
@@ -50,7 +51,7 @@ replay.
 A comparison of all methods included in this paper can be run with
 `compare_time.py`. This includes a comparison of the time these methods take to train (Figures 4 and 5).
 
-We should note that the results reported in this paper were obtained with
+Note that the results reported in this paper were obtained with
 [this earlier version](https://github.com/GMvandeVen/continual-learning/tree/9c0ca78f43c29594b376ca59516031fcdaa5d7ba)
 of the code. 
 

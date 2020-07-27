@@ -7,6 +7,7 @@ import torch
 from torch import optim
 import visual_plt
 import utils
+import pandas as pd
 from param_stamp import get_param_stamp, get_param_stamp_from_args
 import evaluate
 from data import get_multitask_experiment
@@ -90,17 +91,19 @@ cl_params.add_argument('--epsilon', type=float, default=0.1, dest="epsilon", hel
 cl_params.add_argument('--xdg', action='store_true', help="Use 'Context-dependent Gating' (Masse et al, 2018)")
 cl_params.add_argument('--gating-prop', type=float, metavar="PROP", help="--> XdG: prop neurons per layer to gate")
 
-# exemplar parameters
-icarl_params = parser.add_argument_group('Exemplar Parameters')
-icarl_params.add_argument('--icarl', action='store_true', help="bce-distill, use-exemplars & add-exemplars")
-icarl_params.add_argument('--use-exemplars', action='store_true', help="use exemplars for classification")
-icarl_params.add_argument('--add-exemplars', action='store_true', help="add exemplars to current task dataset")
-icarl_params.add_argument('--budget', type=int, default=2000, dest="budget", help="how many exemplars can be stored?")
-icarl_params.add_argument('--herding', action='store_true', help="use herding to select exemplars (instead of random)")
-icarl_params.add_argument('--norm-exemplars', action='store_true', help="normalize features/averages of exemplars")
+# data storage ('exemplars') parameters
+store_params = parser.add_argument_group('Data Storage Parameters')
+store_params.add_argument('--icarl', action='store_true', help="bce-distill, use-exemplars & add-exemplars")
+store_params.add_argument('--use-exemplars', action='store_true', help="use exemplars for classification")
+store_params.add_argument('--add-exemplars', action='store_true', help="add exemplars to current task's training set")
+store_params.add_argument('--budget', type=int, default=1000, dest="budget", help="how many samples can be stored?")
+store_params.add_argument('--herding', action='store_true', help="use herding to select stored data (instead of random)")
+store_params.add_argument('--norm-exemplars', action='store_true', help="normalize features/averages of exemplars")
 
 # evaluation parameters
 eval_params = parser.add_argument_group('Evaluation Parameters')
+eval_params.add_argument('--time', action='store_true', help="keep track of total training time")
+eval_params.add_argument('--metrics', action='store_true', help="calculate additional metrics (e.g., BWT, forgetting)")
 eval_params.add_argument('--pdf', action='store_true', help="generate pdf with results")
 eval_params.add_argument('--visdom', action='store_true', help="use visdom for on-the-fly plots")
 eval_params.add_argument('--log-per-task', action='store_true', help="set all visdom-logs to [iters]")
@@ -112,7 +115,7 @@ eval_params.add_argument('--sample-n', type=int, default=64, help="# images to s
 
 
 
-def run(args):
+def run(args, verbose=False):
 
     # Set default arguments & check for incompatible options
     args.lr_gen = args.lr if args.lr_gen is None else args.lr_gen
@@ -168,12 +171,14 @@ def run(args):
 
     # If only want param-stamp, get it printed to screen and exit
     if hasattr(args, "get_stamp") and args.get_stamp:
-        _ = get_param_stamp_from_args(args=args)
+        print(get_param_stamp_from_args(args=args))
         exit()
 
     # Use cuda?
     cuda = torch.cuda.is_available() and args.cuda
     device = torch.device("cuda" if cuda else "cpu")
+    if verbose:
+        print("CUDA is {}used".format("" if cuda else "NOT(!!) "))
 
     # Set random seeds
     np.random.seed(args.seed)
@@ -189,9 +194,11 @@ def run(args):
     #----------------#
 
     # Prepare data for chosen experiment
+    if verbose:
+        print("\nPreparing the data...")
     (train_datasets, test_datasets), config, classes_per_task = get_multitask_experiment(
         name=args.experiment, scenario=scenario, tasks=args.tasks, data_dir=args.d_dir,
-        verbose=True, exception=True if args.seed==0 else False,
+        verbose=verbose, exception=True if args.seed==0 else False,
     )
 
 
@@ -317,23 +324,34 @@ def run(args):
     #---------------------#
 
     # Get parameter-stamp (and print on screen)
+    if verbose:
+        print("\nParameter-stamp...")
     param_stamp = get_param_stamp(
-        args, model.name, verbose=True, replay=True if (not args.replay=="none") else False,
+        args, model.name, verbose=verbose, replay=True if (not args.replay=="none") else False,
         replay_model_name=generator.name if (args.replay=="generative" and not args.feedback) else None,
     )
 
     # Print some model-characteristics on the screen
-    # -main model
-    print("\n")
-    utils.print_model_info(model, title="MAIN MODEL")
-    # -generator
-    if generator is not None:
-        utils.print_model_info(generator, title="GENERATOR")
+    if verbose:
+        # -main model
+        utils.print_model_info(model, title="MAIN MODEL")
+        # -generator
+        if generator is not None:
+            utils.print_model_info(generator, title="GENERATOR")
+
+    # Prepare for keeping track of statistics required for metrics (also used for plotting in pdf)
+    if args.pdf or args.metrics:
+        # -define [metrics_dict] to keep track of performance during training for storing & for later plotting in pdf
+        metrics_dict = evaluate.initiate_metrics_dict(n_tasks=args.tasks, scenario=args.scenario)
+        # -evaluate randomly initiated model on all tasks & store accuracies in [metrics_dict] (for calculating metrics)
+        if not args.use_exemplars:
+            metrics_dict = evaluate.intial_accuracy(model, test_datasets, metrics_dict,
+                                                    classes_per_task=classes_per_task, scenario=scenario,
+                                                    test_size=None, no_task_mask=False)
+    else:
+        metrics_dict = None
 
     # Prepare for plotting in visdom
-    # -define [precision_dict] to keep track of performance during training for storing and for later plotting in pdf
-    precision_dict = evaluate.initiate_precision_dict(args.tasks)
-    precision_dict_exemplars = evaluate.initiate_precision_dict(args.tasks) if args.use_exemplars else None
     # -visdom-settings
     if args.visdom:
         env_name = "{exp}{tasks}-{scenario}".format(exp=args.experiment, tasks=args.tasks, scenario=args.scenario)
@@ -349,10 +367,8 @@ def run(args):
             ) else "",
         )
         visdom = {'env': env_name, 'graph': graph_name}
-        if args.use_exemplars:
-            visdom_exemplars = {'env': env_name, 'graph': "{}-EX".format(graph_name)}
     else:
-        visdom = visdom_exemplars = None
+        visdom = None
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -380,24 +396,24 @@ def run(args):
 
     # Callbacks for reporting and visualizing accuracy
     # -visdom (i.e., after each [prec_log]
-    eval_cb = cb._eval_cb(
-        log=args.prec_log, test_datasets=test_datasets, visdom=visdom, precision_dict=None, iters_per_task=args.iters,
-        test_size=args.prec_n, classes_per_task=classes_per_task, scenario=scenario,
-    )
-    # -pdf / reporting: summary plots (i.e, only after each task)
-    eval_cb_full = cb._eval_cb(
-        log=args.iters, test_datasets=test_datasets, precision_dict=precision_dict,
-        iters_per_task=args.iters, classes_per_task=classes_per_task, scenario=scenario,
-    )
-    # -with exemplars (both for visdom & reporting / pdf)
-    eval_cb_exemplars = cb._eval_cb(
-        log=args.iters, test_datasets=test_datasets, visdom=visdom_exemplars, classes_per_task=classes_per_task,
-        precision_dict=precision_dict_exemplars, scenario=scenario, iters_per_task=args.iters,
-        with_exemplars=True,
-    ) if args.use_exemplars else None
-    # -collect them in <lists>
-    eval_cbs = [eval_cb, eval_cb_full]
-    eval_cbs_exemplars = [eval_cb_exemplars]
+    eval_cbs = [
+        cb._eval_cb(log=args.prec_log, test_datasets=test_datasets, visdom=visdom,
+                    iters_per_task=args.iters, test_size=args.prec_n, classes_per_task=classes_per_task,
+                    scenario=scenario, with_exemplars=False)
+    ] if (not args.use_exemplars) else [None]
+    #--> during training on a task, evaluation cannot be with exemplars as those are only selected after training
+    #    (instead, evaluation for visdom is only done after each task, by including callback-function into [metric_cbs])
+
+    # Callbacks for calculating statists required for metrics
+    # -pdf / reporting: summary plots (i.e, only after each task) (when using exemplars, also for visdom)
+    metric_cbs = [
+        cb._metric_cb(log=args.iters, test_datasets=test_datasets,
+                      classes_per_task=classes_per_task, metrics_dict=metrics_dict, scenario=scenario,
+                      iters_per_task=args.iters, with_exemplars=args.use_exemplars),
+        cb._eval_cb(log=args.iters, test_datasets=test_datasets, visdom=visdom,
+                    iters_per_task=args.iters, test_size=args.prec_n, classes_per_task=classes_per_task,
+                    scenario=scenario, with_exemplars=True) if args.use_exemplars else None
+    ]
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -406,7 +422,8 @@ def run(args):
     #----- TRAINING -----#
     #--------------------#
 
-    print("--> Training:")
+    if verbose:
+        print("\nTraining...")
     # Keep track of training-time
     start = time.time()
     # Train model
@@ -415,13 +432,14 @@ def run(args):
         iters=args.iters, batch_size=args.batch,
         generator=generator, gen_iters=args.g_iters, gen_loss_cbs=generator_loss_cbs,
         sample_cbs=sample_cbs, eval_cbs=eval_cbs, loss_cbs=generator_loss_cbs if args.feedback else solver_loss_cbs,
-        eval_cbs_exemplars=eval_cbs_exemplars, use_exemplars=args.use_exemplars, add_exemplars=args.add_exemplars,
+        metric_cbs=metric_cbs, use_exemplars=args.use_exemplars, add_exemplars=args.add_exemplars,
     )
     # Get total training-time in seconds, and write to file
-    training_time = time.time() - start
-    time_file = open("{}/time-{}.txt".format(args.r_dir, param_stamp), 'w')
-    time_file.write('{}\n'.format(training_time))
-    time_file.close()
+    if args.time:
+        training_time = time.time() - start
+        time_file = open("{}/time-{}.txt".format(args.r_dir, param_stamp), 'w')
+        time_file.write('{}\n'.format(training_time))
+        time_file.close()
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -430,18 +448,21 @@ def run(args):
     #----- EVALUATION -----#
     #----------------------#
 
-    print("\n\n--> Evaluation ({}-incremental learning scenario):".format(args.scenario))
+    if verbose:
+        print("\n\nEVALUATION RESULTS:")
 
     # Evaluate precision of final model on full test-set
     precs = [evaluate.validate(
         model, test_datasets[i], verbose=False, test_size=None, task=i+1, with_exemplars=False,
         allowed_classes=list(range(classes_per_task*i, classes_per_task*(i+1))) if scenario=="task" else None
     ) for i in range(args.tasks)]
-    print("\n Precision on test-set (softmax classification):")
-    for i in range(args.tasks):
-        print(" - Task {}: {:.4f}".format(i + 1, precs[i]))
     average_precs = sum(precs) / args.tasks
-    print('=> average precision over all {} tasks: {:.4f}'.format(args.tasks, average_precs))
+    # -print on screen
+    if verbose:
+        print("\n Precision on test-set{}:".format(" (softmax classification)" if args.use_exemplars else ""))
+        for i in range(args.tasks):
+            print(" - Task {}: {:.4f}".format(i + 1, precs[i]))
+        print('=> Average precision over all {} tasks: {:.4f}\n'.format(args.tasks, average_precs))
 
     # -with exemplars
     if args.use_exemplars:
@@ -449,12 +470,110 @@ def run(args):
             model, test_datasets[i], verbose=False, test_size=None, task=i+1, with_exemplars=True,
             allowed_classes=list(range(classes_per_task*i, classes_per_task*(i+1))) if scenario=="task" else None
         ) for i in range(args.tasks)]
-        print("\n Precision on test-set (classification using exemplars):")
-        for i in range(args.tasks):
-            print(" - Task {}: {:.4f}".format(i + 1, precs[i]))
         average_precs_ex = sum(precs) / args.tasks
-        print('=> average precision over all {} tasks: {:.4f}'.format(args.tasks, average_precs_ex))
-    print("\n")
+        # -print on screen
+        if verbose:
+            print(" Precision on test-set (classification using exemplars):")
+            for i in range(args.tasks):
+                print(" - Task {}: {:.4f}".format(i + 1, precs[i]))
+            print('=> Average precision over all {} tasks: {:.4f}\n'.format(args.tasks, average_precs_ex))
+
+    if args.metrics:
+        # Accuracy matrix
+        if args.scenario in ('task', 'domain'):
+            R = pd.DataFrame(data=metrics_dict['acc per task'],
+                             index=['after task {}'.format(i + 1) for i in range(args.tasks)])
+            R.loc['at start'] = metrics_dict['initial acc per task'] if (not args.use_exemplars) else [
+                'NA' for _ in range(args.tasks)
+            ]
+            R = R.reindex(['at start'] + ['after task {}'.format(i + 1) for i in range(args.tasks)])
+            BWTs = [(R.loc['after task {}'.format(args.tasks), 'task {}'.format(i + 1)] - \
+                     R.loc['after task {}'.format(i + 1), 'task {}'.format(i + 1)]) for i in range(args.tasks - 1)]
+            FWTs = [0. if args.use_exemplars else (
+                R.loc['after task {}'.format(i+1), 'task {}'.format(i + 2)] - R.loc['at start', 'task {}'.format(i+2)]
+            ) for i in range(args.tasks-1)]
+            forgetting = []
+            for i in range(args.tasks - 1):
+                forgetting.append(max(R.iloc[1:args.tasks, i]) - R.iloc[args.tasks, i])
+            R.loc['FWT (per task)'] = ['NA'] + FWTs
+            R.loc['BWT (per task)'] = BWTs + ['NA']
+            R.loc['F (per task)'] = forgetting + ['NA']
+            BWT = sum(BWTs) / (args.tasks - 1)
+            F = sum(forgetting) / (args.tasks - 1)
+            FWT = sum(FWTs) / (args.tasks - 1)
+            metrics_dict['BWT'] = BWT
+            metrics_dict['F'] = F
+            metrics_dict['FWT'] = FWT
+            # -print on screen
+            if verbose:
+                print("Accuracy matrix")
+                print(R)
+                print("\nFWT = {:.4f}".format(FWT))
+                print("BWT = {:.4f}".format(BWT))
+                print("  F = {:.4f}\n\n".format(F))
+        else:
+            if verbose:
+                # Accuracy matrix based only on classes in that task (i.e., evaluation as if Task-IL scenario)
+                R = pd.DataFrame(data=metrics_dict['acc per task (only classes in task)'],
+                                 index=['after task {}'.format(i + 1) for i in range(args.tasks)])
+                R.loc['at start'] = metrics_dict[
+                    'initial acc per task (only classes in task)'
+                ] if not args.use_exemplars else ['NA' for _ in range(args.tasks)]
+                R = R.reindex(['at start'] + ['after task {}'.format(i + 1) for i in range(args.tasks)])
+                print("Accuracy matrix, based on only classes in that task ('as if Task-IL scenario')")
+                print(R)
+
+                # Accuracy matrix, always based on all classes
+                R = pd.DataFrame(data=metrics_dict['acc per task (all classes)'],
+                                 index=['after task {}'.format(i + 1) for i in range(args.tasks)])
+                R.loc['at start'] = metrics_dict[
+                    'initial acc per task (only classes in task)'
+                ] if not args.use_exemplars else ['NA' for _ in range(args.tasks)]
+                R = R.reindex(['at start'] + ['after task {}'.format(i + 1) for i in range(args.tasks)])
+                print("\nAccuracy matrix, always based on all classes")
+                print(R)
+
+                # Accuracy matrix, based on all classes thus far
+                R = pd.DataFrame(data=metrics_dict['acc per task (all classes up to trained task)'],
+                                 index=['after task {}'.format(i + 1) for i in range(args.tasks)])
+                print("\nAccuracy matrix, based on all classes up to the trained task")
+                print(R)
+
+            # Accuracy matrix, based on all classes up to the task being evaluated
+            # (this is the accuracy-matrix used for calculating the metrics in the Class-IL scenario)
+            R = pd.DataFrame(data=metrics_dict['acc per task (all classes up to evaluated task)'],
+                             index=['after task {}'.format(i + 1) for i in range(args.tasks)])
+            R.loc['at start'] = metrics_dict[
+                'initial acc per task (only classes in task)'
+            ] if not args.use_exemplars else ['NA' for _ in range(args.tasks)]
+            R = R.reindex(['at start'] + ['after task {}'.format(i + 1) for i in range(args.tasks)])
+            BWTs = [(R.loc['after task {}'.format(args.tasks), 'task {}'.format(i + 1)] - \
+                     R.loc['after task {}'.format(i + 1), 'task {}'.format(i + 1)]) for i in range(args.tasks-1)]
+            FWTs = [0. if args.use_exemplars else (
+                R.loc['after task {}'.format(i+1), 'task {}'.format(i+2)] - R.loc['at start', 'task {}'.format(i+2)]
+            ) for i in range(args.tasks-1)]
+            forgetting = []
+            for i in range(args.tasks - 1):
+                forgetting.append(max(R.iloc[1:args.tasks, i]) - R.iloc[args.tasks, i])
+            R.loc['FWT (per task)'] = ['NA'] + FWTs
+            R.loc['BWT (per task)'] = BWTs + ['NA']
+            R.loc['F (per task)'] = forgetting + ['NA']
+            BWT = sum(BWTs) / (args.tasks-1)
+            F = sum(forgetting) / (args.tasks-1)
+            FWT = sum(FWTs) / (args.tasks-1)
+            metrics_dict['BWT'] = BWT
+            metrics_dict['F'] = F
+            metrics_dict['FWT'] = FWT
+            # -print on screen
+            if verbose:
+                print("\nAccuracy matrix, based on all classes up to the evaluated task")
+                print(R)
+                print("\n=> FWT = {:.4f}".format(FWT))
+                print("=> BWT = {:.4f}".format(BWT))
+                print("=>  F = {:.4f}\n".format(F))
+
+    if verbose and args.time:
+        print("=> Total training time = {:.1f} seconds\n".format(training_time))
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -467,18 +586,10 @@ def run(args):
     output_file = open("{}/prec-{}.txt".format(args.r_dir, param_stamp), 'w')
     output_file.write('{}\n'.format(average_precs_ex if args.use_exemplars else average_precs))
     output_file.close()
-    # -precision-dict
-    file_name = "{}/dict-{}".format(args.r_dir, param_stamp)
-    utils.save_object(precision_dict_exemplars if args.use_exemplars else precision_dict, file_name)
-
-    # Average precision on full test set not evaluated using exemplars (i.e., using softmax on final layer)
-    if args.use_exemplars:
-        output_file = open("{}/prec_noex-{}.txt".format(args.r_dir, param_stamp), 'w')
-        output_file.write('{}\n'.format(average_precs))
-        output_file.close()
-        # -precision-dict:
-        file_name = "{}/dict_noex-{}".format(args.r_dir, param_stamp)
-        utils.save_object(precision_dict, file_name)
+    # -metrics-dict
+    if args.metrics:
+        file_name = "{}/dict-{}".format(args.r_dir, param_stamp)
+        utils.save_object(metrics_dict, file_name)
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -490,7 +601,8 @@ def run(args):
     # If requested, generate pdf
     if args.pdf:
         # -open pdf
-        pp = visual_plt.open_pdf("{}/{}.pdf".format(args.p_dir, param_stamp))
+        plot_name = "{}/{}.pdf".format(args.p_dir, param_stamp)
+        pp = visual_plt.open_pdf(plot_name)
 
         # -show samples and reconstructions (either from main model or from separate generator)
         if args.feedback or args.replay=="generative":
@@ -501,23 +613,23 @@ def run(args):
 
         # -show metrics reflecting progression during training
         figure_list = []  #-> create list to store all figures to be plotted
+
         # -generate all figures (and store them in [figure_list])
+        key = "acc per task ({} task)".format("all classes up to trained" if scenario=='class' else "only classes in")
+        plot_list = []
+        for i in range(args.tasks):
+            plot_list.append(metrics_dict[key]["task {}".format(i + 1)])
         figure = visual_plt.plot_lines(
-            precision_dict["all_tasks"], x_axes=precision_dict["x_task"],
+            plot_list, x_axes=metrics_dict["x_task"],
             line_names=['task {}'.format(i + 1) for i in range(args.tasks)]
         )
         figure_list.append(figure)
         figure = visual_plt.plot_lines(
-            [precision_dict["average"]], x_axes=precision_dict["x_task"],
+            [metrics_dict["average"]], x_axes=metrics_dict["x_task"],
             line_names=['average all tasks so far']
         )
         figure_list.append(figure)
-        if args.use_exemplars:
-            figure = visual_plt.plot_lines(
-                precision_dict_exemplars["all_tasks"], x_axes=precision_dict_exemplars["x_task"],
-                line_names=['task {}'.format(i + 1) for i in range(args.tasks)]
-            )
-            figure_list.append(figure)
+
         # -add figures to pdf (and close this pdf).
         for figure in figure_list:
             pp.savefig(figure)
@@ -525,6 +637,9 @@ def run(args):
         # -close pdf
         pp.close()
 
+        # -print name of generated plot on screen
+        if verbose:
+            print("\nGenerated plot: {}\n".format(plot_name))
 
 
 
@@ -534,4 +649,4 @@ if __name__ == '__main__':
     # -set default-values for certain arguments based on chosen scenario & experiment
     args = set_default_values(args)
     # -run experiment
-    run(args)
+    run(args, verbose=True)

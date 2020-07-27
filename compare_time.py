@@ -2,7 +2,6 @@
 import argparse
 import os
 import numpy as np
-import utils
 from param_stamp import get_param_stamp_from_args
 import visual_plt
 import main
@@ -77,11 +76,11 @@ def get_results(args):
     # -get param-stamp
     param_stamp = get_param_stamp_from_args(args)
     # -check whether already run; if not do so
-    if not os.path.isfile('{}/prec-{}.txt'.format(args.r_dir, param_stamp)):
-        print(" ... running ... ")
+    if os.path.isfile("{}/time-{}.txt".format(args.r_dir, param_stamp)):
+        print("{}: already run".format(param_stamp))
+    else:
+        print("{}: ...running...".format(param_stamp))
         main.run(args)
-    # -get results-dict
-    dict = utils.load_object("{}/dict-{}".format(args.r_dir, param_stamp))
     # -get average precisions & trainig-times
     fileName = '{}/prec-{}.txt'.format(args.r_dir, param_stamp)
     file = open(fileName)
@@ -94,7 +93,7 @@ def get_results(args):
     # -print average precision on screen
     print("--> average precision: {}".format(ave))
     # -return tuple with the results
-    return (dict, ave, training_time)
+    return (ave, training_time)
 
 
 def collect_all(method_dict, seed_list, args, name=None):
@@ -127,7 +126,12 @@ if __name__ == '__main__':
     if not os.path.isdir(args.p_dir):
         os.mkdir(args.p_dir)
 
+    ## We need to output text-file with training time and dictionary with metrics
+    args.time = True
+    args.metrics = False  #--> calculating metrics would take additional time
+
     ## Add non-optional input argument that will be the same for all runs
+    args.agem = False
     args.bce = False
     args.bce_distill = False
     args.icarl = False
@@ -239,27 +243,19 @@ if __name__ == '__main__':
     #----- COLLECT RESULTS -----#
     #---------------------------#
 
-    prec = {}
     ave_prec = {}
     train_time = {}
 
-    ## Create lists for all extracted <dicts> and <lists> with fixed order
+    ## Create lists for all extracted <lists> with fixed order
     for seed in seed_list:
         i = 0
-        prec[seed] = [
-            SO[seed][i]["average"], SN[seed][i]["average"],
-            SRKD[seed][i]["average"], SRP[seed][i]["average"], ORKD[seed][i]["average"], SLWF[seed][i]["average"],
-            SEWC[seed][i]["average"], SOEWC[seed][i]["average"], SSI[seed][i]["average"],
-        ]
-
-        i = 1
         ave_prec[seed] = [
             SO[seed][i], SN[seed][i],
             SRKD[seed][i], SRP[seed][i], ORKD[seed][i], SLWF[seed][i],
             SEWC[seed][i], SOEWC[seed][i], SSI[seed][i],
         ]
 
-        i = 2
+        i = 1
         train_time[seed] = [
             SO[seed][i], SN[seed][i],
             SRKD[seed][i], SRP[seed][i], ORKD[seed][i], SLWF[seed][i],
@@ -267,7 +263,6 @@ if __name__ == '__main__':
         ]
 
         if args.scenario=="task":
-            prec[seed].append(SXDG[seed][0]["average"])
             ave_prec[seed].append(SXDG[seed][1])
             train_time[seed].append(SXDG[seed][2])
 
@@ -317,24 +312,6 @@ if __name__ == '__main__':
         else:
             print("{:12s} {:.2f}".format(name, 100*means[i]))
     print("#"*60)
-
-    # line-plot
-    ave_lines = []
-    sem_lines = []
-    for id in ids:
-        new_ave_line = []
-        new_sem_line = []
-        for line_id in range(len(prec[args.seed][id])):
-            all_entries = [prec[seed][id][line_id] for seed in seed_list]
-            new_ave_line.append(np.mean(all_entries))
-            if len(seed_list) > 1:
-                new_sem_line.append(1.96*np.sqrt(np.var(all_entries)/(len(all_entries)-1)))
-        ave_lines.append(new_ave_line)
-        sem_lines.append(new_sem_line)
-    figure = visual_plt.plot_lines(ave_lines, x_axes=x_axes, line_names=names, colors=colors, title=title,
-                                   xlabel="tasks", ylabel="average precision (on tasks seen so far)",
-                                   list_with_errors=sem_lines if len(seed_list)>1 else None)
-    figure_list.append(figure)
 
     # scatter-plot (accuracy vs training-time)
     accuracies = []

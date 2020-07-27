@@ -33,8 +33,8 @@ def _sample_cb(log, config, visdom=None, test_datasets=None, sample_size=64, ite
 
 
 
-def _eval_cb(log, test_datasets, visdom=None, precision_dict=None, iters_per_task=None,
-             test_size=None, classes_per_task=None, scenario="class", summary_graph=True, with_exemplars=False):
+def _eval_cb(log, test_datasets, visdom=None, iters_per_task=None, test_size=None, classes_per_task=None,
+             scenario="class", summary_graph=True, with_exemplars=False):
     '''Initiates function for evaluating performance of classifier (in terms of precision).
 
     [test_datasets]     <list> of <Datasets>; also if only 1 task, it should be presented as a list!
@@ -49,12 +49,41 @@ def _eval_cb(log, test_datasets, visdom=None, precision_dict=None, iters_per_tas
         # evaluate the solver on multiple tasks (and log to visdom)
         if iteration % log == 0:
             evaluate.precision(classifier, test_datasets, task, iteration,
-                               classes_per_task=classes_per_task, scenario=scenario, precision_dict=precision_dict,
-                               test_size=test_size, visdom=visdom, summary_graph=summary_graph,
-                               with_exemplars=with_exemplars)
+                               classes_per_task=classes_per_task, scenario=scenario, test_size=test_size,
+                               visdom=visdom, summary_graph=summary_graph, with_exemplars=with_exemplars)
 
-    ## Return the callback-function (except if neither visdom or [precision_dict] is selected!)
-    return eval_cb if ((visdom is not None) or (precision_dict is not None)) else None
+    ## Return the callback-function (except if visdom is not selected!)
+    return eval_cb if (visdom is not None) else None
+
+
+
+##------------------------------------------------------------------------------------------------------------------##
+
+################################################
+## Callback-functions for calculating metrics ##
+################################################
+
+def _metric_cb(log, test_datasets, metrics_dict=None, iters_per_task=None, test_size=None, classes_per_task=None,
+               scenario="class", with_exemplars=False):
+    '''Initiates function for calculating statistics required for calculating metrics.
+
+    [test_datasets]     <list> of <Datasets>; also if only 1 task, it should be presented as a list!
+    [classes_per_task]  <int> number of "active" classes per task
+    [scenario]          <str> how to decide which classes to include during evaluating precision'''
+
+    def metric_cb(classifier, batch, task=1):
+        '''Callback-function, to calculate statistics for metrics.'''
+
+        iteration = batch if task==1 else (task-1)*iters_per_task + batch
+
+        # evaluate the solver on multiple tasks (and log to visdom)
+        if iteration % log == 0:
+            evaluate.metric_statistics(classifier, test_datasets, task, iteration,
+                                       classes_per_task=classes_per_task, scenario=scenario, metrics_dict=metrics_dict,
+                                       test_size=test_size, with_exemplars=with_exemplars)
+
+    ## Return the callback-function (except if no [metrics_dict] is selected!)
+    return metric_cb if (metrics_dict is not None) else None
 
 
 

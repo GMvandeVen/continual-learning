@@ -40,7 +40,7 @@ def get_dataset(name, type='train', download=True, capacity=None, permutation=No
 
     # print information about dataset on the screen
     if verbose:
-        print("  --> {}: '{}'-dataset consisting of {} samples".format(name, type, len(dataset)))
+        print(" --> {}: '{}'-dataset consisting of {} samples".format(name, type, len(dataset)))
 
     # if dataset is (possibly) not large enough, create copies until it is.
     if capacity is not None and len(dataset) < capacity:

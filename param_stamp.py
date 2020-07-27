@@ -54,7 +54,7 @@ def get_param_stamp(args, model_name, verbose=True, replay=False, replay_model_n
     multi_n_stamp = "{n}-{set}".format(n=args.tasks, set=args.scenario) if hasattr(args, "tasks") else ""
     task_stamp = "{exp}{multi_n}".format(exp=args.experiment, multi_n=multi_n_stamp)
     if verbose:
-        print("\n"+" --> task:          "+task_stamp)
+        print(" --> task:          "+task_stamp)
 
     # -for model
     model_stamp = model_name
@@ -116,7 +116,7 @@ def get_param_stamp(args, model_name, verbose=True, replay=False, replay_model_n
         use = "{}{}".format("addEx-" if args.add_exemplars else "", "useEx-" if args.use_exemplars else "")
         exemplar_stamp = "--{}{}".format(use, exemplar_opts)
         if verbose:
-            print(" --> Exemplars:     " + "{}{}".format(use, exemplar_opts))
+            print(" --> exemplars:     " + "{}{}".format(use, exemplar_opts))
 
     # -for binary classification loss
     binLoss_stamp = ""
@@ -130,5 +130,6 @@ def get_param_stamp(args, model_name, verbose=True, replay=False, replay_model_n
     )
 
     ## Print param-stamp on screen and return
-    print(param_stamp)
+    if verbose:
+        print(param_stamp)
     return param_stamp

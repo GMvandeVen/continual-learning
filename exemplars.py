@@ -61,7 +61,7 @@ class ExemplarHandler(nn.Module, metaclass=abc.ABCMeta):
             for (image_batch, _) in dataloader:
                 image_batch = image_batch.to(self._device())
                 with torch.no_grad():
-                    feature_batch = self.feature_extractor(image_batch)
+                    feature_batch = self.feature_extractor(image_batch).cpu()
                 if first_entry:
                     features = feature_batch
                     first_entry = False
