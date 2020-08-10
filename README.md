@@ -32,6 +32,8 @@ To run specific methods, use the following:
 
 For information on further options: `./main.py -h`.
 
+The code in this repository only supports MNIST-based experiments. An extension to more challenging problems (e.g., with
+natural images as inputs) can be found here: <https://github.com/GMvandeVen/brain-inspired-replay>.
 
 ## Running comparisons from the papers
 #### "Three CL scenarios"-paper
