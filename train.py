@@ -120,7 +120,7 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class",classes
                         iters_left_previous[task_id] -= 1
                         if iters_left_previous[task_id]==0:
                             data_loader_previous[task_id] = iter(utils.get_data_loader(
-                                train_datasets[task_id], batch_size_to_use, cuda=cuda, drop_last=True
+                                previous_datasets[task_id], batch_size_to_use, cuda=cuda, drop_last=True
                             ))
                             iters_left_previous[task_id] = len(data_loader_previous[task_id])
                 else:
