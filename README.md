@@ -35,6 +35,10 @@ For information on further options: `./main.py -h`.
 The code in this repository only supports MNIST-based experiments. An extension to more challenging problems (e.g., with
 natural images as inputs) can be found here: <https://github.com/GMvandeVen/brain-inspired-replay>.
 
+Another extension, with several additional class-incremental learing methods
+(BI-R, CWR, AR1, SLDA & Generative Classifier), can be found here:
+<https://github.com/GMvandeVen/class-incremental-learning>.
+
 ## Running comparisons from the papers
 #### "Three CL scenarios"-paper
 [This paper](https://arxiv.org/abs/1904.07734) describes three scenarios for continual learning (Task-IL, Domain-IL &
