@@ -17,7 +17,7 @@ Individual experiments can be run with `main.py`. Main options are:
 - `--scenario`: according to which scenario? (`task`|`domain`|`class`)
 - `--tasks`: how many tasks?
 
-To run specific methods, use the following:
+To run specific methods, you can use the following:
 - Context-dependent-Gating (XdG): `./main.py --xdg=0.8`
 - Elastic Weight Consolidation (EWC): `./main.py --ewc --lambda=5000`
 - Online EWC:  `./main.py --ewc --online --lambda=5000 --gamma=1`
@@ -29,6 +29,10 @@ To run specific methods, use the following:
 - Experience Replay (ER): `./main.py --replay=exemplars --budget=2000`
 - Averaged Gradient Episodic Memory (A-GEM): `./main.py --replay=exemplars --agem --budget=2000`
 - iCaRL: `./main.py --icarl --budget=2000`
+
+To run the two baselines (see the papers for details):
+- None: `./main.py`
+- Offline: `./main.py --replay=offline`
 
 For information on further options: `./main.py -h`.
 
