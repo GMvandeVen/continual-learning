@@ -5,28 +5,29 @@ import time
 import torch
 from torch import optim
 # -custom-written libraries
-from visual import visual_plt
 import utils
 from utils import checkattr
 from param_stamp import get_param_stamp, get_param_stamp_from_args, visdom_name
 from eval import evaluate, callbacks as cb
 from data.load import get_context_set
-from train import train_cl, train_fromp, train_gen_classifier
+from data.labelstream import SharpBoundaryStream, RandomStream, FuzzyBoundaryStream
+from data.datastream import DataStream
+from train import train_on_stream, train_gen_classifier_on_stream
 from models.cl.continual_learner import ContinualLearner
-from models.cl.memory_buffer import MemoryBuffer
+from models.cl.memory_buffer_stream import MemoryBuffer
 import options
 from param_values import set_method_options,check_for_errors,set_default_values
 import define_models as define
-from models.cl import fromp_optimizer
 
 
 ## Function for specifying input-options and organizing / checking them
 def handle_inputs():
     # Set indicator-dictionary for correctly retrieving / checking input options
-    kwargs = {'main': True}
+    kwargs = {'main': True, 'no_boundaries': True}
     # Define input options
-    parser = options.define_args(filename="main", description='Run an individual continual learning experiment '
-                                                              'using the "academic continual learning setting".')
+    parser = options.define_args(filename="main_task_free",
+                                 description='Run a "task-free" continual learning experiment '
+                                             '(i.e., no [known,] sharp boundaries between contexts).')
     parser = options.add_general_options(parser, **kwargs)
     parser = options.add_eval_options(parser, **kwargs)
     parser = options.add_problem_options(parser, **kwargs)
@@ -35,9 +36,9 @@ def handle_inputs():
     parser = options.add_cl_options(parser, **kwargs)
     # Parse, process and check chosen options
     args = parser.parse_args()
-    set_method_options(args)                         # -if a method's "convenience"-option is chosen, select components
-    set_default_values(args, also_hyper_params=True) # -set defaults, some are based on chosen scenario / experiment
-    check_for_errors(args, **kwargs)                 # -check whether incompatible options are selected
+    set_method_options(args)                                             # -"convenience"-option used, select components
+    set_default_values(args, also_hyper_params=True, no_boundaries=True) # -set defaults, some based on chosen options
+    check_for_errors(args, **kwargs)                                     # -check for incompatible options
     return args
 
 
@@ -51,7 +52,7 @@ def run(args, verbose=False):
 
     # If only want param-stamp, get it printed to screen and exit
     if checkattr(args, 'get_stamp'):
-        print(get_param_stamp_from_args(args=args))
+        print(get_param_stamp_from_args(args=args, no_boundaries=True))
         exit()
 
     # Use cuda?
@@ -70,20 +71,18 @@ def run(args, verbose=False):
 
     #-------------------------------------------------------------------------------------------------#
 
-    #----------------#
-    #----- DATA -----#
-    #----------------#
+    #-----------------------#
+    #----- CONTEXT SET -----#
+    #-----------------------#
 
-    # Prepare data for chosen experiment
+    # Prepare the context set for the chosen experiment
     if verbose:
         print("\n\n " +' LOAD DATA '.center(70, '*'))
     (train_datasets, test_datasets), config = get_context_set(
         name=args.experiment, scenario=args.scenario, contexts=args.contexts, data_dir=args.d_dir,
         normalize=checkattr(args, "normalize"), verbose=verbose, exception=(args.seed==0),
-        singlehead=checkattr(args, 'singlehead'), train_set_per_class=checkattr(args, 'gen_classifier')
+        singlehead=checkattr(args, 'singlehead')
     )
-    # The experiments in this script follow the academic continual learning setting,
-    # the above lines of code therefore load both the 'context set' and the 'data stream'
 
     #-------------------------------------------------------------------------------------------------#
 
@@ -131,6 +130,31 @@ def run(args, verbose=False):
 
     #-------------------------------------------------------------------------------------------------#
 
+    #-----------------------#
+    #----- DATA-STREAM -----#
+    #-----------------------#
+
+    # Set up the stream of context-labels to use
+    if args.stream == "academic-setting":
+        label_stream = SharpBoundaryStream(n_contexts=args.contexts, iters_per_context=args.iters)
+    elif args.stream == "fuzzy-boundaries":
+        label_stream = FuzzyBoundaryStream(
+            n_contexts=args.contexts, iters_per_context=args.iters, fuzziness=args.fuzziness,
+            batch_size=1 if checkattr(args, 'labels_per_batch') else args.batch
+        )
+    elif args.stream == "random":
+        label_stream = RandomStream(n_contexts=args.contexts)
+    else:
+        raise NotImplementedError("Stream type '{}' not currently implemented.".format(args.stream))
+
+    # Set up the data-stream to be presented to the network
+    data_stream = DataStream(
+        train_datasets, label_stream, batch_size=args.batch, return_context=(args.scenario=="task"),
+        per_batch=True if (args.stream=="academic-setting") else checkattr(args, 'labels_per_batch'),
+    )
+
+    #-------------------------------------------------------------------------------------------------#
+
     #----------------------#
     #----- CLASSIFIER -----#
     #----------------------#
@@ -138,11 +162,12 @@ def run(args, verbose=False):
     # Define the classifier
     if verbose:
         print("\n\n " + ' DEFINE THE CLASSIFIER '.center(70, '*'))
-    model = define.define_classifier(args=args, config=config, device=device, depth=depth)
+    model = define.define_classifier(args=args, config=config, device=device, depth=depth, stream=True)
 
     # Some type of classifiers consist of multiple networks
-    n_networks = len(train_datasets) if (checkattr(args, 'separate_networks') or
-                                         checkattr(args, 'gen_classifier')) else 1
+    n_networks = len(train_datasets) if checkattr(args, 'separate_networks') else (
+        model.classes if checkattr(args, 'gen_classifier') else 1
+    )
 
     # Go through all networks to ...
     for network_id in range(n_networks):
@@ -152,21 +177,18 @@ def run(args, verbose=False):
         # ... initialize / use pre-trained / freeze model-parameters, and
         define.init_params(model_to_set, args)
         # ... define optimizer (only include parameters that "requires_grad")
-        if not checkattr(args, 'fromp'):
-            model_to_set.optim_list = [{'params': filter(lambda p: p.requires_grad, model_to_set.parameters()),
-                                        'lr': args.lr}]
-            model_to_set.optim_type = args.optimizer
-            if model_to_set.optim_type in ("adam", "adam_reset"):
-                model_to_set.optimizer = optim.Adam(model_to_set.optim_list, betas=(0.9, 0.999))
-            elif model_to_set.optim_type=="sgd":
-                model_to_set.optimizer = optim.SGD(model_to_set.optim_list,
-                                                   momentum=args.momentum if hasattr(args, 'momentum') else 0.)
+        model_to_set.optim_list = [{'params': filter(lambda p: p.requires_grad, model_to_set.parameters()),
+                                    'lr': args.lr}]
+        model_to_set.optim_type = args.optimizer
+        if model_to_set.optim_type=="adam":
+            model_to_set.optimizer = optim.Adam(model_to_set.optim_list, betas=(0.9, 0.999))
+        elif model_to_set.optim_type=="sgd":
+            model_to_set.optimizer = optim.SGD(model_to_set.optim_list,
+                                               momentum=args.momentum if hasattr(args, 'momentum') else 0.)
 
-    # On what scenario will model be trained? If needed, indicate whether singlehead output / how to set active classes.
+    # On what scenario will model be trained?
     model.scenario = args.scenario
     model.classes_per_context = config['classes_per_context']
-    model.singlehead = checkattr(args, 'singlehead')
-    model.neg_samples = args.neg_samples if hasattr(args, 'neg_samples') else "all"
 
     # Print some model-characteristics on the screen
     if verbose:
@@ -178,22 +200,17 @@ def run(args, verbose=False):
 
     # -------------------------------------------------------------------------------------------------#
 
+    # For multiple continual learning methods: how often (after how many iters) to perform the consolidation operation?
+    # (this can be interpreted as: how many iterations together should be considered a "context")
+    model.update_every = args.update_every if hasattr(args, 'update_every') else 1
+
+    # -------------------------------------------------------------------------------------------------#
+
     # ----------------------------------------------------#
     # ----- CL-STRATEGY: CONTEXT-SPECIFIC COMPONENTS -----#
     # ----------------------------------------------------#
 
-    # XdG: create for every context a "mask" for each hidden fully connected layer
-    if isinstance(model, ContinualLearner) and checkattr(args, 'xdg') and args.gating_prop > 0.:
-        model.mask_dict = {}
-        for context_id in range(args.contexts):
-            model.mask_dict[context_id + 1] = {}
-            for i in range(model.fcE.layers):
-                layer = getattr(model.fcE, "fcLayer{}".format(i + 1)).linear
-                if context_id == 0:
-                    model.excit_buffer_list.append(layer.excit_buffer)
-                n_units = len(layer.excit_buffer)
-                gated_units = np.random.choice(n_units, size=int(args.gating_prop * n_units), replace=False)
-                model.mask_dict[context_id + 1][i] = gated_units
+    # XdG: already indicated when defining the classifier
 
     #-------------------------------------------------------------------------------------------------#
 
@@ -201,28 +218,7 @@ def run(args, verbose=False):
     #----- CL-STRATEGY: PARAMETER REGULARIZATION -----#
     #-------------------------------------------------#
 
-    # Options for computing the Fisher Information matrix (e.g., EWC, Online-EWC, KFAC-EWC, NCL)
-    use_fisher = hasattr(args, 'importance_weighting') and args.importance_weighting=="fisher" and \
-                 (checkattr(args, 'precondition') or checkattr(args, 'weight_penalty'))
-    if isinstance(model, ContinualLearner) and use_fisher:
-        # -how to estimate the Fisher Information
-        model.fisher_n = args.fisher_n if hasattr(args, 'fisher_n') else None
-        model.fisher_labels = args.fisher_labels if hasattr(args, 'fisher_labels') else 'all'
-        model.fisher_batch = args.fisher_batch if hasattr(args, 'fisher_batch') else 1
-        # -options relating to 'Offline EWC' (Kirkpatrick et al., 2017) and 'Online EWC' (Schwarz et al., 2018)
-        model.offline = checkattr(args, 'offline')
-        if not model.offline:
-            model.gamma = args.gamma if hasattr(args, 'gamma') else 1.
-        # -if requested, initialize Fisher with prior
-        if checkattr(args, 'fisher_init'):
-            model.data_size = args.data_size  #-> sets how strong the prior is
-            model.context_count = 1           #-> makes that already on the first context regularization will happen
-            if model.fisher_kfac:
-                model.initialize_kfac_fisher()
-            else:
-                model.initialize_fisher()
-
-    # Parameter regularization by adding a weight penalty (e.g., EWC, SI, NCL, EWC-KFAC)
+    # Parameter regularization by adding a weight penalty (e.g., SI)
     if isinstance(model, ContinualLearner) and checkattr(args, 'weight_penalty'):
         model.weight_penalty = True
         model.importance_weighting = args.importance_weighting
@@ -230,57 +226,22 @@ def run(args, verbose=False):
         if model.importance_weighting=='si':
             model.epsilon = args.epsilon if hasattr(args, 'epsilon') else 0.1
 
-    # Parameter regularization through pre-conditioning of the gradient (e.g., OWM, NCL)
-    if isinstance(model, ContinualLearner) and checkattr(args, 'precondition'):
-        model.precondition = True
-        model.importance_weighting = args.importance_weighting
-        model.alpha = args.alpha
-
     #-------------------------------------------------------------------------------------------------#
 
     #--------------------------------------------------#
     #----- CL-STRATEGY: FUNCTIONAL REGULARIZATION -----#
     #--------------------------------------------------#
 
-    # Should a distillation loss (i.e., soft targets) be used? (e.g., for LwF, but also for BI-R)
+    # Should a distillation loss (i.e., soft targets) be used? (e.g., for LwF)
     if isinstance(model, ContinualLearner) and hasattr(args, 'replay'):
         model.replay_targets = "soft" if checkattr(args, 'distill') else "hard"
         model.KD_temp = args.temp if hasattr(args, 'temp') else 2.
-        if args.replay=="current" and model.replay_targets=="soft":
-            model.lwf_weighting = True
-
-    # Should the FROMP-optimizer by used?
-    if checkattr(args, 'fromp'):
-        model.optimizer = fromp_optimizer.opt_fromp(model, lr=args.lr, tau=args.tau, betas=(0.9, 0.999))
 
     #-------------------------------------------------------------------------------------------------#
 
     #-------------------------------#
     #----- CL-STRATEGY: REPLAY -----#
     #-------------------------------#
-
-    # DGR: Should a separate generative model be trained to generate the data to be replayed?
-    train_gen = True if (args.replay=="generative" and not checkattr(args, 'feedback')) else False
-    if train_gen:
-        if verbose:
-            print("\n\n " + ' SEPARATE GENERATIVE MODEL '.center(70, '*'))
-        # -specify architecture
-        generator = define.define_vae(args=args, config=config, device=device, depth=depth)
-        # -initialize parameters
-        define.init_params(generator, args, verbose=verbose)
-        # -set optimizer(s)
-        generator.optim_list = [{'params': filter(lambda p: p.requires_grad, generator.parameters()),
-                                 'lr': args.lr_gen}]
-        generator.optim_type = args.optimizer
-        if generator.optim_type in ("adam", "adam_reset"):
-            generator.optimizer = optim.Adam(generator.optim_list, betas=(0.9, 0.999))
-        elif generator.optim_type == "sgd":
-            generator.optimizer = optim.SGD(generator.optim_list)
-        # -print architecture to screen
-        if verbose:
-            utils.print_model_info(generator)
-    else:
-        generator = None
 
     # Should the model be trained with replay?
     if isinstance(model, ContinualLearner) and hasattr(args, 'replay'):
@@ -297,26 +258,19 @@ def run(args, verbose=False):
     #----- MEMORY BUFFER -----#
     #-------------------------#
 
-    # Should a memory buffer be maintained? (e.g., for experience replay, FROMP or prototype-based classification)
-    use_memory_buffer = checkattr(args, 'prototypes') or checkattr(args, 'add_buffer') \
-                        or args.replay=="buffer" or checkattr(args, 'fromp')
+    # Should a memory buffer be maintained? (e.g., for experience replay or prototype-based classification)
+    use_memory_buffer = checkattr(args, 'prototypes') or args.replay=="buffer"
     if isinstance(model, MemoryBuffer) and use_memory_buffer:
         model.use_memory_buffer = True
-        model.budget_per_class = args.budget
-        model.use_full_capacity = checkattr(args, 'use_full_capacity')
-        model.sample_selection = args.sample_selection if hasattr(args, 'sample_selection') else 'random'
-        model.norm_exemplars = (model.sample_selection=="herding")
-
-    # Should the memory buffer be added to the training set of the current context?
-    model.add_buffer = checkattr(args, 'add_buffer')
+        model.budget = args.budget
+        model.initialize_buffer(config, return_c=(args.scenario=='task'))
 
     # Should classification be done using prototypes as class templates?
     model.prototypes = checkattr(args, 'prototypes')
 
-    # Relevant for iCaRL: whether to use binary distillation loss for previous classes
+    # Relevant for "modified iCaRL": whether to use binary loss
     if model.label=="Classifier":
         model.binaryCE = checkattr(args, 'bce')
-        model.binaryCE_distill = checkattr(args, 'bce_distill')
 
     #-------------------------------------------------------------------------------------------------#
 
@@ -329,8 +283,8 @@ def run(args, verbose=False):
         if verbose:
             print('\n\n' + ' PARAMETER STAMP '.center(70, '*'))
     param_stamp = get_param_stamp(
-        args, model.name, replay_model_name=generator.name if train_gen else None,
-        feature_extractor_name= feature_extractor.name if (feature_extractor is not None) else None, verbose=verbose,
+        args, model.name, feature_extractor_name= feature_extractor.name if (feature_extractor is not None) else None,
+        verbose=verbose, no_boundaries=True,
     )
 
     #-------------------------------------------------------------------------------------------------#
@@ -338,9 +292,6 @@ def run(args, verbose=False):
     #---------------------#
     #----- CALLBACKS -----#
     #---------------------#
-
-    # Prepare for keeping track of performance during training for plotting in pdf
-    plotting_dict = evaluate.initiate_plotting_dict(args.contexts) if checkattr(args, 'pdf') else None
 
     # Setting up Visdom environment
     if utils.checkattr(args, 'visdom'):
@@ -353,37 +304,18 @@ def run(args, verbose=False):
         visdom = None
 
     # Callbacks for reporting and visualizing loss
-    generator_loss_cbs = [
-        cb._VAE_loss_cb(log=args.loss_log, visdom=visdom, replay=False if args.replay=="none" else True,
-                        model=model if checkattr(args, 'feedback') else generator, contexts=args.contexts,
-                        iters_per_context=args.iters if checkattr(args, 'feedback') else args.g_iters)
-    ] if (train_gen or checkattr(args, 'feedback')) else [None]
     loss_cbs = [
         cb._gen_classifier_loss_cb(
-            log=args.loss_log, classes=config['classes'], visdom=visdom if args.loss_log>args.iters else None,
+            log=args.loss_log, classes=None, visdom=None,
         ) if checkattr(args, 'gen_classifier') else cb._classifier_loss_cb(
-            log=args.loss_log, visdom=visdom, model=model, contexts=args.contexts, iters_per_context=args.iters,
+            log=args.loss_log, visdom=visdom, model=model, contexts=None,
         )
-    ] if (not checkattr(args, 'feedback')) else generator_loss_cbs
-
-    # Callbacks for evaluating and plotting generated / reconstructed samples
-    no_samples = (checkattr(args, "no_samples") or feature_extractor is not None)
-    sample_cbs = [
-        cb._sample_cb(log=args.sample_log, visdom=visdom, config=config, sample_size=args.sample_n,
-                      test_datasets=None if checkattr(args, 'gen_classifier') else test_datasets)
-    ] if (train_gen or checkattr(args, 'feedback') or checkattr(args, 'gen_classifier')) and not no_samples else [None]
+    ]
 
     # Callbacks for reporting and visualizing accuracy
-    # -after each [acc_log], for visdom
     eval_cbs = [
         cb._eval_cb(log=args.acc_log, test_datasets=test_datasets, visdom=visdom, iters_per_context=args.iters,
                     test_size=args.acc_n)
-    ] if (not checkattr(args, 'prototypes')) and (not checkattr(args, 'gen_classifier')) else [None]
-    # -after each context, for plotting in pdf (when using prototypes / generative classifier, this is also for visdom)
-    context_cbs = [
-        cb._eval_cb(log=args.iters, test_datasets=test_datasets, plotting_dict=plotting_dict,
-                    visdom=visdom if checkattr(args, 'prototypes') or checkattr(args, 'gen_classifier') else None,
-                    iters_per_context=args.iters, test_size=args.acc_n, S=10)
     ]
 
     #-------------------------------------------------------------------------------------------------#
@@ -392,9 +324,6 @@ def run(args, verbose=False):
     #----- TRAINING -----#
     #--------------------#
 
-    # Should a baseline be used (i.e., 'joint training' or 'cummulative training')?
-    baseline = 'joint' if checkattr(args, 'joint') else ('cummulative' if checkattr(args, 'cummulative') else 'none')
-
     # Train model
     if args.train:
         if verbose:
@@ -402,18 +331,10 @@ def run(args, verbose=False):
         # -keep track of training-time
         if args.time:
             start = time.time()
-        # -select correct training function
-        train_fn = train_fromp if checkattr(args, 'fromp') else (
-            train_gen_classifier if checkattr(args, 'gen_classifier') else train_cl
-        )
+        # -select training function
+        train_fn = train_gen_classifier_on_stream if checkattr(args, 'gen_classifier') else train_on_stream
         # -perform training
-        train_fn(
-            model, train_datasets, iters=args.iters, batch_size=args.batch, baseline=baseline,
-            sample_cbs=sample_cbs, eval_cbs=eval_cbs, loss_cbs=loss_cbs, context_cbs=context_cbs,
-            # -if using generative replay with a separate generative model:
-            generator=generator, gen_iters=args.g_iters if hasattr(args, 'g_iters') else args.iters,
-            gen_loss_cbs=generator_loss_cbs,
-        )
+        train_fn(model, data_stream, iters=args.iters*args.contexts, eval_cbs=eval_cbs, loss_cbs=loss_cbs)
         # -get total training-time in seconds, write to file and print to screen
         if args.time:
             training_time = time.time() - start
@@ -454,14 +375,14 @@ def run(args, verbose=False):
     if verbose:
         print("\n Accuracy of final model on test-set:")
     accs = []
-    for i in range(args.contexts):
+    for context_id in range(args.contexts):
         acc = evaluate.test_acc(
-            model, test_datasets[i], verbose=False, test_size=None, context_id=i, allowed_classes=list(
-                range(config['classes_per_context']*i, config['classes_per_context']*(i+1))
-            ) if (args.scenario=="task" and not checkattr(args, 'singlehead')) else None,
+            model, test_datasets[context_id], verbose=False, context_id=context_id, allowed_classes=list(
+                range(config['classes_per_context'] * context_id, config['classes_per_context'] * (context_id+1))
+            ) if (args.scenario == "task" and not checkattr(args, 'singlehead')) else None, test_size=None,
         )
         if verbose:
-            print(" - Context {}: {:.4f}".format(i + 1, acc))
+            print(" - Context {}: {:.4f}".format(context_id+1, acc))
         accs.append(acc)
     average_accs = sum(accs) / args.contexts
     if verbose:
@@ -473,50 +394,6 @@ def run(args, verbose=False):
     output_file.write('{}\n'.format(average_accs))
     output_file.close()
 
-    #-------------------------------------------------------------------------------------------------#
-
-    #--------------------#
-    #----- PLOTTING -----#
-    #--------------------#
-
-    # If requested, generate pdf
-    if checkattr(args, 'pdf'):
-        # -open pdf
-        plot_name = "{}/{}.pdf".format(args.p_dir, param_stamp)
-        pp = visual_plt.open_pdf(plot_name)
-        # -show samples and reconstructions (either from main model or from separate generator)
-        if checkattr(args, 'feedback') or args.replay=="generative" or checkattr(args, 'gen_classifier'):
-            evaluate.show_samples(
-                model if checkattr(args, 'feedback') or checkattr(args, 'gen_classifier') else generator, config,
-                size=args.sample_n, pdf=pp
-            )
-            if not checkattr(args, 'gen_classifier'):
-                for i in range(args.contexts):
-                    evaluate.show_reconstruction(model if checkattr(args, 'feedback') else generator,
-                                                 test_datasets[i], config, pdf=pp, context=i+1)
-        figure_list = []  #-> create list to store all figures to be plotted
-        # -generate all figures (and store them in [figure_list])
-        plot_list = []
-        for i in range(args.contexts):
-            plot_list.append(plotting_dict["acc per context"]["context {}".format(i + 1)])
-        figure = visual_plt.plot_lines(
-            plot_list, x_axes=plotting_dict["x_context"],
-            line_names=['context {}'.format(i + 1) for i in range(args.contexts)]
-        )
-        figure_list.append(figure)
-        figure = visual_plt.plot_lines(
-            [plotting_dict["average"]], x_axes=plotting_dict["x_context"],
-            line_names=['average all contexts so far']
-        )
-        figure_list.append(figure)
-        # -add figures to pdf
-        for figure in figure_list:
-            pp.savefig(figure)
-        # -close pdf
-        pp.close()
-        # -print name of generated plot on screen
-        if verbose:
-            print("\nGenerated plot: {}\n".format(plot_name))
 
 
 

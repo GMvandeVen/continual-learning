@@ -1,73 +1,121 @@
 # Continual Learning
-This is a PyTorch implementation of the continual learning experiments described in the following papers:
-* Three scenarios for continual learning ([link](https://arxiv.org/abs/1904.07734))
-* Generative replay with feedback connections as a general strategy 
-for continual learning ([link](https://arxiv.org/abs/1809.10635))
+This is a PyTorch implementation of the continual learning experiments with deep neural networks described in the
+following article:
+* Three types of incremental learning (under review; a workshop version is available here:
+[link](https://virtual.lifelong-ml.cc/poster_67.html))
+
+This repository mainly supports experiments in the *academic continual learning setting*, whereby
+a classification-based problem is split up into multiple, non-overlapping *contexts*
+(or *tasks*, as they are often called) that must be learned sequentially.
+Some support is also provided for running more flexible, "task-free" continual learning experiments
+with gradual transitions between contexts.
 
 
-## Requirements
-The current version of the code has been tested with:
-* `pytorch 1.1.0`
-* `torchvision 0.2.2`
+### Earlier version
+An earlier version of the code in this repository can be found 
+[in this branch](https://github.com/GMvandeVen/continual-learning/tree/preprints).
+This version of the code was used for the continual learning experiments described
+in two preprints of the above article:
+- Three scenarios for continual learning (<https://arxiv.org/abs/1904.07734>)
+- Generative replay with feedback connections as a general strategy for continual learning
+(<https://arxiv.org/abs/1809.10635>)
 
 
-## Running the experiments
-Individual experiments can be run with `main.py`. Main options are:
-- `--experiment`: which task protocol? (`splitMNIST`|`permMNIST`)
+## Installation & requirements
+The current version of the code has been tested with `Python 3.10.4` on a Fedora operating system
+with the following versions of PyTorch and Torchvision:
+* `pytorch 1.11.0`
+* `torchvision 0.12.0`
+
+Further Python-packages used are listed in `requirements.txt`.
+Assuming Python and pip are set up, these packages can be installed using:
+```bash
+pip install -r requirements.txt
+```
+
+The code in this repository itself does not need to be installed, but a number of scripts should be made executable:
+```bash
+chmod +x main*.py compare*.py all_results.sh
+```
+
+
+## Demos
+##### Demo 1: Single continual learning experiment
+```bash
+./main.py --experiment=splitMNIST --scenario=task --si
+```
+This runs a single continual learning experiment:
+the method Synaptic Intelligence on the task-incremental learning scenario of Split MNIST
+using the academic continual learning setting.
+Information about the data, the network, the training progress and the produced outputs is printed to the screen.
+Expected run-time on a standard desktop computer is ~6 minutes, with a GPU it is expected to take ~3 minutes.
+
+##### Demo 2: Comparison of continual learning methods
+```bash
+./compare.py --experiment=splitMNIST --scenario=task
+```
+This runs a series of continual learning experiments,
+comparing the performance of various methods on the task-incremental learning scenario of Split MNIST.
+Information about the different experiments, their progress and 
+the produced outputs (e.g., a summary pdf) are printed to the screen.
+Expected run-time on a standard desktop computer is ~100 minutes, with a GPU it is expected to take ~45 minutes.
+
+
+## Re-running the comparisons from the article
+The script `all_results.sh` provides step-by-step instructions for re-running the experiments and re-creating the
+tables and figures reported in the article "Three types of incremental learning".
+
+Although it is possible to run this script as it is, it will take very long and it is probably sensible to parallellize
+the experiments.
+
+
+## Running custom experiments
+#### Academic continual learning setting
+Custom individual experiments in the academic continual learning setting can be run with `main.py`.
+The main options of this script are:
+- `--experiment`: how to construct the context set? (`splitMNIST`|`permMNIST`|`CIFAR10`|`CIFAR100`)
+- `--contexts`: how many contexts?
 - `--scenario`: according to which scenario? (`task`|`domain`|`class`)
-- `--tasks`: how many tasks?
 
 To run specific methods, you can use the following:
-- Context-dependent-Gating (XdG): `./main.py --xdg=0.8`
-- Elastic Weight Consolidation (EWC): `./main.py --ewc --lambda=5000`
-- Online EWC:  `./main.py --ewc --online --lambda=5000 --gamma=1`
-- Synaptic Intelligence (SI): `./main.py --si --c=0.1`
-- Learning without Forgetting (LwF): `./main.py --replay=current --distill`
-- Generative Replay (GR): `./main.py --replay=generative`
-- GR with distillation: `./main.py --replay=generative --distill`
-- Replay-trough-Feedback (RtF): `./main.py --replay=generative --distill --feedback`
-- Experience Replay (ER): `./main.py --replay=exemplars --budget=2000`
-- Averaged Gradient Episodic Memory (A-GEM): `./main.py --replay=exemplars --agem --budget=2000`
-- iCaRL: `./main.py --icarl --budget=2000`
+- Separate Networks: `./main.py --separate-networks`
+- Context-dependent-Gating (XdG): `./main.py --xdg`
+- Elastic Weight Consolidation (EWC): `./main.py --ewc`
+- Synaptic Intelligence (SI): `./main.py --si`
+- Learning without Forgetting (LwF): `./main.py --lwf`
+- Functional Regularization Of the Memorable Past (FROMP): `./main.py --fromp`
+- Deep Generative Replay (DGR): `./main.py --replay=generative`
+- Brain-Inspired Replay (BI-R): `./main.py --brain-inspired`
+- Experience Replay (ER): `./main.py --replay=buffer`
+- Averaged Gradient Episodic Memory (A-GEM): `./main.py --agem`
+- Generative Classifier: `./main.py --gen-classifier`
+- incremental Classifier and Representation Learning (iCaRL): `./main.py --icarl`
 
-To run the two baselines (see the papers for details):
-- None: `./main.py`
-- Offline: `./main.py --replay=offline`
+To run baseline models (see the article for details):
+- None ("lower target"): `./main.py`
+- Joint ("upper target"): `./main.py --joint`
 
 For information on further options: `./main.py -h`.
+The code supports combinations of several of the above methods.
+It is also possible to create custom approaches by mixing components of different methods,
+although not all possible combinations have been tested.
 
-The code in this repository only supports MNIST-based experiments. An extension to more challenging problems (e.g., with
-natural images as inputs) can be found here: <https://github.com/GMvandeVen/brain-inspired-replay>.
+#### More flexible, "task-free" continual learning experiments
+Custom individual experiments in a more flexible, "task-free" continual learning setting can be run with 
+`main_task_free.py`. The main options of this script are:
+- `--experiment`: how to construct the context set? (`splitMNIST`|`permMNIST`|`CIFAR10`|`CIFAR100`)
+- `--contexts`: how many contexts?
+- `--stream`: how to transition between contexts? (`fuzzy-boundaries`|`academic-setting`|`random`)
+- `--scenario`: according to which scenario? (`task`|`domain`|`class`)
 
-Another extension, with several additional class-incremental learing methods
-(BI-R, CWR, AR1, SLDA & Generative Classifier), can be found here:
-<https://github.com/GMvandeVen/class-incremental-learning>.
-
-## Running comparisons from the papers
-#### "Three CL scenarios"-paper
-[This paper](https://arxiv.org/abs/1904.07734) describes three scenarios for continual learning (Task-IL, Domain-IL &
-Class-IL) and provides an extensive comparion of recently proposed continual learning methods. It uses the permuted and
-split MNIST task protocols, with both performed according to all three scenarios.
-
-A comparison of all methods included in this paper can be run with `compare_all.py` (this script includes extra
-methods and reports additional metrics compared to the paper). The comparison in Appendix B can be run with
-`compare_taskID.py`, and Figure C.1 can be recreated with `compare_replay.py`.
-
-#### "Replay-through-Feedback"-paper
-The three continual learning scenarios were actually first identified in [this paper](https://arxiv.org/abs/1809.10635),
-after which this paper introduces the Replay-through-Feedback framework as a more efficent implementation of generative
-replay. 
-
-A comparison of all methods included in this paper can be run with
-`compare_time.py`. This includes a comparison of the time these methods take to train (Figures 4 and 5).
-
-Note that the results reported in this paper were obtained with
-[this earlier version](https://github.com/GMvandeVen/continual-learning/tree/9c0ca78f43c29594b376ca59516031fcdaa5d7ba)
-of the code. 
-
+For information on further options: `./main_task_free.py -h`. This script supports several of the above 
+continual learning methods, but not (yet) all of them. Some methods have been slightly modified to 
+make them suitable for the absence of (known) context boundaries.
+In particular, methods that normally perform a certain consolidation operation at context boundaries, instead perform
+this consolidation operation every `X` iterations, with `X` set with the option `--update-every`. 
 
 ## On-the-fly plots during training
-With this code it is possible to track progress during training with on-the-fly plots. This feature requires `visdom`, 
+With this code progress during training can be tracked with on-the-fly plots. This feature requires `visdom`, 
 which can be installed as follows:
 ```bash
 pip install visdom
@@ -77,7 +125,7 @@ Before running the experiments, the visdom server should be started from the com
 python -m visdom.server
 ```
 The visdom server is now alive and can be accessed at `http://localhost:8097` in your browser (the plots will appear
-there). The flag `--visdom` should then be added when calling `./main.py` to run the experiments with on-the-fly plots.
+there). The flag `--visdom` should then be added when calling `./main.py` or `./main_task_free.py` to run the experiments with on-the-fly plots.
 
 For more information on `visdom` see <https://github.com/facebookresearch/visdom>.
 
@@ -99,12 +147,31 @@ Please consider citing our papers if you use this code in your research:
   year={2018}
 }
 ```
+[//]: # (If you use this code in your research, please consider citing its accompanying paper:)
+
+[//]: # (```)
+
+[//]: # (@article{vandeven2022three,)
+
+[//]: # (  title={Three types of incremental learning},)
+
+[//]: # (  author={van de Ven, Gido M and Tuytelaars, Tinne and Tolias, Andreas S},)
+
+[//]: # (  journal={...},)
+
+[//]: # (  year={2022})
+
+[//]: # (})
+
+[//]: # (```)
 
 
 ### Acknowledgments
-The research projects from which this code originated have been supported by an IBRO-ISN Research Fellowship, by the 
-Lifelong Learning Machines (L2M) program of the Defence Advanced Research Projects Agency (DARPA) via contract number 
-HR0011-18-2-0025 and by the Intelligence Advanced Research Projects Activity (IARPA) via Department of 
-Interior/Interior Business Center (DoI/IBC) contract number D16PC00003. Disclaimer: views and conclusions 
-contained herein are those of the authors and should not be interpreted as necessarily representing the official
-policies or endorsements, either expressed or implied, of DARPA, IARPA, DoI/IBC, or the U.S. Government.
+The research project from which this code originated has been supported by an IBRO-ISN Research Fellowship,
+by the ERC-funded project KeepOnLearning (reference number 101021347),
+by the Lifelong Learning Machines (L2M) program of the Defence Advanced Research Projects Agency (DARPA)
+via contract number HR0011-18-2-0025 and by the Intelligence Advanced Research Projects Activity (IARPA)
+via Department of Interior/Interior Business Center (DoI/IBC) contract number D16PC00003.
+Disclaimer: views and conclusions contained herein are those of the authors and should not be interpreted
+as necessarily representing the official policies or endorsements, either expressed or implied,
+of DARPA, IARPA, DoI/IBC, or the U.S. Government.

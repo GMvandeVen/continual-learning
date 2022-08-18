@@ -1,6 +1,12 @@
+.env
+
+.ipynb_checkpoints/
 .idea/
 __pycache__/
 
-datasets/
-plots/
-results/
+store/models/mM*
+store/plots
+store/datasets
+store/results
+
+venv

@@ -1,103 +1,57 @@
 #!/usr/bin/env python3
-import argparse
 import os
 from param_stamp import get_param_stamp_from_args
-import visual_plt
+from visual import visual_plt
 import numpy as np
 import main
-from param_values import set_default_values
-
-
-description = 'Evaluate variants of "exact replay" as function of available memory budget.'
-parser = argparse.ArgumentParser('./_compare_replay.py', description=description)
-parser.add_argument('--seed', type=int, default=1, help='[first] random seed (for each random-module used)')
-parser.add_argument('--n-seeds', type=int, default=1, help='how often to repeat?')
-parser.add_argument('--no-gpus', action='store_false', dest='cuda', help="don't use GPUs")
-parser.add_argument('--data-dir', type=str, default='./datasets', dest='d_dir', help="default: %(default)s")
-parser.add_argument('--plot-dir', type=str, default='./plots', dest='p_dir', help="default: %(default)s")
-parser.add_argument('--results-dir', type=str, default='./results', dest='r_dir', help="default: %(default)s")
-
-# expirimental task parameters.
-task_params = parser.add_argument_group('Task Parameters')
-task_params.add_argument('--experiment', type=str, default='splitMNIST', choices=['permMNIST', 'splitMNIST'])
-task_params.add_argument('--scenario', type=str, default='task', choices=['task', 'domain', 'class'])
-task_params.add_argument('--tasks', type=int, help='number of tasks')
-
-# specify loss functions to be used
-loss_params = parser.add_argument_group('Loss Parameters')
-loss_params.add_argument('--bce', action='store_true', help="use binary (instead of multi-class) classication loss")
-
-# model architecture parameters
-model_params = parser.add_argument_group('Parameters Main Model')
-model_params.add_argument('--fc-layers', type=int, default=3, dest='fc_lay', help="# of fully-connected layers")
-model_params.add_argument('--fc-units', type=int, metavar="N", help="# of units in first fc-layers")
-model_params.add_argument('--fc-drop', type=float, default=0., help="dropout probability for fc-units")
-model_params.add_argument('--fc-bn', type=str, default="no", help="use batch-norm in the fc-layers (no|yes)")
-model_params.add_argument('--fc-nl', type=str, default="relu", choices=["relu", "leakyrelu"])
-model_params.add_argument('--singlehead', action='store_true', help="for Task-IL: use a 'single-headed' output layer   "
-                                                                   " (instead of a 'multi-headed' one)")
-
-# training hyperparameters / initialization
-train_params = parser.add_argument_group('Training Parameters')
-train_params.add_argument('--iters', type=int, help="# batches to optimize solver")
-train_params.add_argument('--lr', type=float,  help="learning rate")
-train_params.add_argument('--batch', type=int, default=128, help="batch-size")
-train_params.add_argument('--optimizer', type=str, choices=['adam', 'adam_reset', 'sgd'], default='adam')
-
-# exemplar parameters
-icarl_params = parser.add_argument_group('Exemplar Parameters')
-icarl_params.add_argument('--budget', type=int, default=1000, dest="budget", help="how many exemplars can be stored?")
-icarl_params.add_argument('--herding', action='store_true', help="use herding to select exemplars (instead of random)")
-icarl_params.add_argument('--norm-exemplars', action='store_true', help="normalize features/averages of exemplars")
-
-# "memory replay" parameters
-replay_params = parser.add_argument_group('Replay Parameters')
-replay_params.add_argument('--temp', type=float, default=2., dest='temp', help="temperature for distillation")
-# - generative model parameters (if separate model)
-genmodel_params = parser.add_argument_group('Generative Model Parameters')
-genmodel_params.add_argument('--g-fc-lay', type=int, help='[fc_layers] in generator (default: same as classifier)')
-genmodel_params.add_argument('--g-fc-uni', type=int, help='[fc_units] in generator (default: same as classifier)')
-genmodel_params.add_argument('--g-z-dim', type=int, default=100, help='# of latent variables (def=100)')
-# - hyper-parameters
-gen_params = parser.add_argument_group('Generator Hyper Parameters')
-gen_params.add_argument('--gen-iters', type=int, dest="g_iters", help="# batches to optimize generator (def=[iters])")
-gen_params.add_argument('--lr-gen', type=float, help="learning rate (separate) generator (default: lr)")
-
-# evaluation parameters
-eval_params = parser.add_argument_group('Evaluation Parameters')
-eval_params.add_argument('--pdf', action='store_true', help="generate pdfs for individual experiments")
-eval_params.add_argument('--visdom', action='store_true', help="use visdom for on-the-fly plots")
-eval_params.add_argument('--prec-n', type=int, default=1024, help="# samples for evaluating solver's precision")
-eval_params.add_argument('--sample-n', type=int, default=64, help="# images to show")
-
-
-## Load input-arguments
-args = parser.parse_args()
+from param_values import check_for_errors,set_default_values
+import options
+from utils import checkattr
 
 
 ## Memory budget values to compare
-budget_list_permMNIST = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000]
-budget_list_splitMNIST = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000]
+budget_list_CIFAR100 = [1, 2, 5, 10, 20, 50, 100, 200, 500]
+budget_list_splitMNIST = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000]
 
 
+## Function for specifying input-options and organizing / checking them
+def handle_inputs():
+    # Set indicator-dictionary for correctly retrieving / checking input options
+    kwargs = {'comparison': True, 'compare_replay': True}
+    # Define input options
+    parser = options.define_args(filename="compare_replay",
+                                 description='Evaluate CL methods storing data as function of available memory budget.')
+    parser = options.add_general_options(parser, **kwargs)
+    parser = options.add_eval_options(parser, **kwargs)
+    parser = options.add_problem_options(parser, **kwargs)
+    parser = options.add_model_options(parser, **kwargs)
+    parser = options.add_train_options(parser, **kwargs)
+    parser = options.add_cl_options(parser, **kwargs)
+    # Should some methods not be included?
+    parser.add_argument('--no-fromp', action='store_true', help="no FROMP")
+    # Parse, process (i.e., set defaults for unselected options) and check chosen options
+    args = parser.parse_args()
+    set_default_values(args, also_hyper_params=False) # -set defaults, some are based on chosen scenario / experiment
+    check_for_errors(args, **kwargs)                  # -check whether incompatible options are selected
+    return args
 
-def get_prec(args):
+
+def get_result(args):
     # -get param-stamp
     param_stamp = get_param_stamp_from_args(args)
-    # -check whether already run; if not do so
-    if os.path.isfile("{}/prec-{}.txt".format(args.r_dir, param_stamp)):
-        print("{}: already run".format(param_stamp))
+    # -check whether already run, and if not do so
+    if os.path.isfile('{}/acc-{}.txt'.format(args.r_dir, param_stamp)):
+        print(" already run: {}".format(param_stamp))
     else:
-        print("{}: ...running...".format(param_stamp))
+        args.train = True
+        print("\n ...running: {} ...".format(param_stamp))
         main.run(args)
-    # -get average precision
-    fileName = '{}/prec-{}.txt'.format(args.r_dir, param_stamp)
+    # -get average accuracy
+    fileName = '{}/acc-{}.txt'.format(args.r_dir, param_stamp)
     file = open(fileName)
     ave = float(file.readline())
     file.close()
-    # -print average precision on screen
-    print("--> average precision: {}".format(ave))
-    # -return average precision
+    # -return it
     return ave
 
 
@@ -108,24 +62,17 @@ def collect_all(method_dict, seed_list, args, name=None):
     # -run method for all random seeds
     for seed in seed_list:
         args.seed = seed
-        method_dict[seed] = get_prec(args)
+        method_dict[seed] = get_result(args)
     # -return updated dictionary with results
     return method_dict
-
 
 
 
 if __name__ == '__main__':
 
     ## Load input-arguments
-    args = parser.parse_args()
-    # -set default-values for certain arguments based on chosen scenario & experiment
-    args = set_default_values(args, also_hyper_params=False)
-    # -set other default arguments
-    args.lr_gen = args.lr if args.lr_gen is None else args.lr_gen
-    args.g_iters = args.iters if args.g_iters is None else args.g_iters
-    args.g_fc_lay = args.fc_lay if args.g_fc_lay is None else args.g_fc_lay
-    args.g_fc_uni = args.fc_units if args.g_fc_uni is None else args.g_fc_uni
+    args = handle_inputs()
+
     # -create results-directory if needed
     if not os.path.isdir(args.r_dir):
         os.mkdir(args.r_dir)
@@ -134,30 +81,7 @@ if __name__ == '__main__':
         os.mkdir(args.p_dir)
 
     ## Select correct memory budget list
-    budget_list = budget_list_permMNIST if args.experiment=="permMNIST" else budget_list_splitMNIST
-
-    ## Add non-optional input argument that will be the same for all runs
-    args.ewc = False
-    args.ewc_lambda = 5000.
-    args.si = False
-    args.si_c = 0.1
-    args.xdg = False
-    args.gating_prop = 0.
-    args.agem = False
-    args.feedback = False
-    args.log_per_task = True
-    args.time = False
-    args.metrics = False
-
-    ## Add input arguments that will be different for different runs
-    args.replay = "none"
-    args.distill = False
-    args.use_exemplars = False
-    args.add_exemplars = False
-    args.icarl = False
-    args.bce_distill = False
-    # args.seed could of course also vary!
-
+    budget_list = budget_list_CIFAR100 if args.experiment=="CIFAR100" else budget_list_splitMNIST
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -168,70 +92,87 @@ if __name__ == '__main__':
 
     seed_list = list(range(args.seed, args.seed+args.n_seeds))
 
+    budget_limit_FROMP = 1000
+    if checkattr(args, 'tau_per_budget'):
+        if args.scenario=="task":
+            tau_dict = {'1': 100000., '2': 1000., '5': 100000., '10': 0.001, '20': 10000., '50': 1000.,
+                        '100': 0.01, '200': 0.01, '500': 0.1, '1000': 10.}
+        elif args.scenario=="domain":
+            tau_dict = {'1': 0.001, '2': 100000., '5': 100000., '10': 100000., '20': 100000., '50': 10000.,
+                        '100': 10., '200': 1., '500': 10., '1000': 0.1}
+        elif args.scenario=="class":
+            tau_dict = {'1': 100000., '2': 0.01, '5': 10000., '10': 100000., '20': 10000., '50': 1000.,
+                        '100': 1000., '200': 10., '500': 0.001, '1000': 1.}
 
-    ###### BASELINE #########
+
+    ###### BASELINES #########
 
     args.replay = "none"
     BASE = {}
     BASE = collect_all(BASE, seed_list, args, name="None")
 
-
-    ###### GENERATIVE REPLAY #########
-
-    args.replay = "generative"
-    DGR = {}
-    DGR = collect_all(DGR, seed_list, args, name="DGR")
-
-    args.distill = True
-    DGRD = {}
-    DGRD = collect_all(DGRD, seed_list, args, name="DGR + distill")
+    iters_temp = args.iters
+    args.iters = args.contexts*iters_temp
+    args.joint = True
+    JOINT = {}
+    JOINT = collect_all(JOINT, seed_list, args, name="Joint")
+    args.joint = False
+    args.iters = iters_temp
 
 
-    ###### EXACT REPLAY VARIANTS #########
+    ###### CL METHODS STORING DATA #########
 
-    ## Replay during training
-    args.replay = "exemplars"
+    ## Experience Replay
+    args.replay = "buffer"
+    args.sample_selection = "random"
     args.distill = False
-    EXR = {}
+    ER = {}
     for budget in budget_list:
         args.budget = budget
-        EXR[budget] = {}
-        EXR[budget] = collect_all(EXR[budget], seed_list, args,
-                                  name="Replay Stored Data - budget = {}".format(budget))
+        ER[budget] = {}
+        ER[budget] = collect_all(ER[budget], seed_list, args, name="Experience Replay - budget = {}".format(budget))
 
-    ## Replay during execution
-    args.replay = "none"
-    args.use_exemplars = True
-    EXU = {}
+    ## A-GEM
+    args.replay = "buffer"
+    args.distill = False
+    args.sample_selection = "random"
+    args.use_replay = "inequality"
+    AGEM = {}
     for budget in budget_list:
         args.budget = budget
-        EXU[budget] = {}
-        EXU[budget] = collect_all(EXU[budget], seed_list, args,
-                                  name="Classify with Exemplars - budget = {}".format(budget))
+        AGEM[budget] = {}
+        AGEM[budget] = collect_all(AGEM[budget], seed_list, args, name="A-GEM - budget = {}".format(budget))
+    args.use_replay = "normal"
 
-    ## Replay during training & during execution
-    args.replay = "exemplars"
-    args.use_exemplars = True
-    EXRU = {}
-    for budget in budget_list:
-        args.budget = budget
-        EXRU[budget] = {}
-        EXRU[budget] = collect_all(EXRU[budget], seed_list, args,
-                                   name="Replay Stored Data & Classify with Exemplars - budget = {}".format(budget))
+    ## FROMP
+    if not checkattr(args, 'no_fromp'):
+        args.replay = "none"
+        args.fromp = True
+        args.sample_selection = "fromp"
+        FROMP = {}
+        for budget in budget_list:
+            if budget<=budget_limit_FROMP:
+                args.budget = budget
+                if checkattr(args, 'tau_per_budget'):
+                    args.tau = tau_dict['{}'.format(budget)]
+                FROMP[budget] = {}
+                FROMP[budget] = collect_all(FROMP[budget], seed_list, args, name="FROMP - budget = {}".format(budget))
+        args.fromp = False
 
-    ## iCaRL (except not necessarily with "herding" and "norm_exemplars")!
+    ## iCaRL
     if args.scenario=="class":
         args.replay = "none"
-        args.use_exemplars = True
+        args.prototypes = True
         args.bce = True
         args.bce_distill = True
-        args.add_exemplars = True
+        args.add_buffer = True
+        args.sample_selection = 'herding'
+        args.neg_samples = "all-so-far"
         ICARL = {}
         for budget in budget_list:
             args.budget = budget
             ICARL[budget] = {}
-            ICARL[budget] = collect_all(ICARL[budget], seed_list, args,
-                                        name="iCaRL - budget = {}".format(budget))
+            ICARL[budget] = collect_all(ICARL[budget], seed_list, args, name="iCaRL - budget = {}".format(budget))
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -241,7 +182,7 @@ if __name__ == '__main__':
     #--------------------#
 
     # name for plot
-    plot_name = "summaryGenRep-{}{}-{}".format(args.experiment, args.tasks, args.scenario)
+    plot_name = "summaryExactRep-{}{}-{}".format(args.experiment,args.contexts,args.scenario)
     scheme = "incremental {} learning".format(args.scenario)
     title = "{}  -  {}".format(args.experiment, scheme)
 
@@ -251,46 +192,50 @@ if __name__ == '__main__':
 
     # set scale of y-axis
     y_lim = [0,1] if args.scenario=="class" else None
+    y_lim = None
 
     # Methods for comparison
-    h_lines = [np.mean([BASE[seed] for seed in seed_list])]
-    h_lines.append(np.mean([DGR[seed] for seed in seed_list]))
-    h_lines.append(np.mean([DGRD[seed] for seed in seed_list]))
-    h_errors = [np.sqrt(np.var([BASE[seed] for seed in seed_list]) / (len(seed_list)-1))] if args.n_seeds>1 else None
-    if args.n_seeds>1:
-        h_errors.append(np.sqrt(np.var([DGR[seed] for seed in seed_list]) / (len(seed_list) - 1)))
-        h_errors.append(np.sqrt(np.var([DGRD[seed] for seed in seed_list]) / (len(seed_list) - 1)))
-    h_labels = ["None", "DGR", "DGR+distill"]
-    h_colors = ["grey", "indianred", "red"]
+    h_lines = [np.mean([BASE[seed] for seed in seed_list]), np.mean([JOINT[seed] for seed in seed_list])]
+    h_errors = [np.sqrt(np.var([BASE[seed] for seed in seed_list]) / (len(seed_list)-1)),
+                np.sqrt(np.var([JOINT[seed] for seed in seed_list]) / (len(seed_list)-1))] if args.n_seeds>1 else None
+    h_labels = ["None", "Joint"]
+    h_colors = ["grey", "black"]
 
 
     # Different variants of exact replay
     # -prepare
-    ave_EXR = []
-    sem_EXR = []
-    ave_EXU = []
-    sem_EXU = []
-    ave_EXRU = []
-    sem_EXRU = []
+    ave_ER = []
+    sem_ER = []
+    ave_AGEM = []
+    sem_AGEM = []
+    if not checkattr(args, 'no_fromp'):
+        ave_FROMP = []
+        sem_FROMP = []
     if args.scenario=="class":
         ave_ICARL = []
         sem_ICARL = []
 
     for budget in budget_list:
-        all_entries = [EXR[budget][seed] for seed in seed_list]
-        ave_EXR.append(np.mean(all_entries))
+        all_entries = [ER[budget][seed] for seed in seed_list]
+        ave_ER.append(np.mean(all_entries))
         if args.n_seeds > 1:
-            sem_EXR.append(np.sqrt(np.var(all_entries) / (len(all_entries) - 1)))
+            sem_ER.append(np.sqrt(np.var(all_entries) / (len(all_entries) - 1)))
 
-        all_entries = [EXU[budget][seed] for seed in seed_list]
-        ave_EXU.append(np.mean(all_entries))
+        all_entries = [AGEM[budget][seed] for seed in seed_list]
+        ave_AGEM.append(np.mean(all_entries))
         if args.n_seeds > 1:
-            sem_EXU.append(np.sqrt(np.var(all_entries) / (len(all_entries) - 1)))
+            sem_AGEM.append(np.sqrt(np.var(all_entries) / (len(all_entries) - 1)))
 
-        all_entries = [EXRU[budget][seed] for seed in seed_list]
-        ave_EXRU.append(np.mean(all_entries))
-        if args.n_seeds > 1:
-            sem_EXRU.append(np.sqrt(np.var(all_entries) / (len(all_entries) - 1)))
+        if not checkattr(args, 'no_fromp'):
+            if budget<=budget_limit_FROMP:
+                all_entries = [FROMP[budget][seed] for seed in seed_list]
+                ave_FROMP.append(np.mean(all_entries))
+                if args.n_seeds > 1:
+                    sem_FROMP.append(np.sqrt(np.var(all_entries) / (len(all_entries) - 1)))
+            else:
+                ave_FROMP.append(np.nan)
+                if args.n_seeds>1:
+                    sem_FROMP.append(np.nan)
 
         if args.scenario=="class":
             all_entries = [ICARL[budget][seed] for seed in seed_list]
@@ -299,20 +244,26 @@ if __name__ == '__main__':
                 sem_ICARL.append(np.sqrt(np.var(all_entries) / (len(all_entries) - 1)))
 
     # -collect
-    lines = [ave_EXR, ave_EXU, ave_EXRU]
-    errors = [sem_EXR, sem_EXU, sem_EXRU] if args.n_seeds > 1 else None
-    line_names = ["Replay exemplars", "Classify with exemplars", "Replay & classify with exemplars"]
-    colors = ["black", "grey", "darkgrey"]
+    lines = [ave_ER, ave_AGEM]
+    errors = [sem_ER, sem_AGEM] if args.n_seeds > 1 else None
+    line_names = ["ER", "A-GEM"]
+    colors = ["darkgrey", "brown"]
+    if not checkattr(args, 'no_fromp'):
+        lines.append(ave_FROMP)
+        line_names.append("FROMP")
+        colors.append("indianred")
+        if args.n_seeds>1:
+            errors.append(sem_FROMP)
     if args.scenario=="class":
         lines.append(ave_ICARL)
         line_names.append("iCaRL")
-        colors.append("brown")
+        colors.append("purple")
         if args.n_seeds>1:
             errors.append(sem_ICARL)
 
     # -plot
     figure = visual_plt.plot_lines(
-        lines, x_axes=budget_list, ylabel="average precision (after all tasks)", title=title, x_log=True, ylim=y_lim,
+        lines, x_axes=budget_list, ylabel="average accuracy (after all contexts)", title=title, x_log=True, ylim=y_lim,
         line_names=line_names, xlabel="Total memory budget", with_dots=True, colors=colors, list_with_errors=errors,
         h_lines=h_lines, h_errors=h_errors, h_labels=h_labels, h_colors=h_colors,
     )

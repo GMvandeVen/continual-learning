@@ -1,29 +1,72 @@
 import torch
 from torch import optim
+from torch.utils.data.dataloader import DataLoader
 from torch.utils.data import ConcatDataset
 import numpy as np
 import tqdm
 import copy
-import utils
-from data import SubDataset, ExemplarDataset
-from continual_learner import ContinualLearner
+from utils import get_data_loader,checkattr
+from data.manipulate import SubDataset, MemorySetDataset
+from models.cl.continual_learner import ContinualLearner
 
 
+def train(model, train_loader, iters, loss_cbs=list(), eval_cbs=list()):
+    '''Train a model with a "train_a_batch" method for [iters] iterations on data from [train_loader].
 
-def train_cl(model, train_datasets, replay_mode="none", scenario="class",classes_per_task=None,iters=2000,batch_size=32,
-             generator=None, gen_iters=0, gen_loss_cbs=list(), loss_cbs=list(), eval_cbs=list(), sample_cbs=list(),
-             use_exemplars=True, add_exemplars=False, metric_cbs=list()):
-    '''Train a model (with a "train_a_batch" method) on multiple tasks, with replay-strategy specified by [replay_mode].
+    [model]             model to optimize
+    [train_loader]      <dataloader> for training [model] on
+    [iters]             <int> (max) number of iterations (i.e., batches) to train for
+    [loss_cbs]          <list> of callback-<functions> to keep track of training progress
+    [eval_cbs]          <list> of callback-<functions> to evaluate model on separate data-set'''
 
-    [model]             <nn.Module> main model to optimize across all tasks
-    [train_datasets]    <list> with for each task the training <DataSet>
-    [replay_mode]       <str>, choice from "generative", "exact", "current", "offline" and "none"
-    [scenario]          <str>, choice from "task", "domain" and "class"
-    [classes_per_task]  <int>, # of classes per task
-    [iters]             <int>, # of optimization-steps (i.e., # of batches) per task
-    [generator]         None or <nn.Module>, if a seperate generative model should be trained (for [gen_iters] per task)
-    [*_cbs]             <list> of call-back functions to evaluate training-progress'''
+    device = model._device()
 
+    # Create progress-bar (with manual control)
+    bar = tqdm.tqdm(total=iters)
+
+    iteration = epoch = 0
+    while iteration < iters:
+        epoch += 1
+
+        # Loop over all batches of an epoch
+        for batch_idx, (data, y) in enumerate(train_loader):
+            iteration += 1
+
+            # Perform training-step on this batch
+            data, y = data.to(device), y.to(device)
+            loss_dict = model.train_a_batch(data, y=y)
+
+            # Fire training-callbacks (for visualization of training-progress)
+            for loss_cb in loss_cbs:
+                if loss_cb is not None:
+                    loss_cb(bar, iteration, loss_dict)
+
+            # Fire evaluation-callbacks (to be executed every [eval_log] iterations, as specified within the functions)
+            for eval_cb in eval_cbs:
+                if eval_cb is not None:
+                    eval_cb(model, iteration)
+
+            # Break if max-number of iterations is reached
+            if iteration == iters:
+                bar.close()
+                break
+
+#------------------------------------------------------------------------------------------------------------#
+
+def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
+             loss_cbs=list(), eval_cbs=list(), sample_cbs=list(), context_cbs=list(),
+             generator=None, gen_iters=0, gen_loss_cbs=list(), **kwargs):
+    '''Train a model (with a "train_a_batch" method) on multiple contexts.
+
+    [model]               <nn.Module> main model to optimize across all contexts
+    [train_datasets]      <list> with for each context the training <DataSet>
+    [iters]               <int>, # of optimization-steps (i.e., # of mini-batches) per context
+    [batch_size]          <int>, # of samples per mini-batch
+    [baseline]            <str>, 'joint': model trained once on data from all contexts
+                                 'cummulative': model trained incrementally, always using data all contexts so far
+    [generator]           None or <nn.Module>, if separate generative model is trained (for [gen_iters] per context)
+    [*_cbs]               <list> of call-back functions to evaluate training-progress
+    '''
 
     # Set model in training-mode
     model.train()
@@ -32,67 +75,91 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class",classes
     cuda = model._is_on_cuda()
     device = model._device()
 
-    # Initiate possible sources for replay (no replay for 1st task)
-    Exact = Generative = Current = False
+    # Initiate possible sources for replay (no replay for 1st context)
+    ReplayStoredData = ReplayGeneratedData = ReplayCurrentData = False
     previous_model = None
 
-    # Register starting param-values (needed for "intelligent synapses").
-    if isinstance(model, ContinualLearner) and (model.si_c>0):
-        for n, p in model.named_parameters():
-            if p.requires_grad:
-                n = n.replace('.', '__')
-                model.register_buffer('{}_SI_prev_task'.format(n), p.data.clone())
+    # Register starting parameter values (needed for SI)
+    if isinstance(model, ContinualLearner) and model.importance_weighting=='si':
+        model.register_starting_param_values()
 
-    # Loop over all tasks.
-    for task, train_dataset in enumerate(train_datasets, 1):
+    # Are there different active classes per context (or just potentially a different mask per context)?
+    per_context = (model.scenario=="task" or (model.scenario=="class" and model.neg_samples=="current"))
+    per_context_singlehead = per_context and (model.scenario=="task" and model.singlehead)
 
-        # If offline replay-setting, create large database of all tasks so far
-        if replay_mode=="offline" and (not scenario=="task"):
-            train_dataset = ConcatDataset(train_datasets[:task])
-        # -but if "offline"+"task"-scenario: all tasks so far included in 'exact replay' & no current batch
-        if replay_mode=="offline" and scenario == "task":
-            Exact = True
+    # Loop over all contexts.
+    for context, train_dataset in enumerate(train_datasets, 1):
+
+        # If using the "joint" baseline, skip to last context, as model is only be trained once on data of all contexts
+        if baseline=='joint':
+            if context<len(train_datasets):
+                continue
+            else:
+                baseline = "cummulative"
+
+        # If using the "cummulative" (or "joint") baseline, create a large training dataset of all contexts so far
+        if baseline=="cummulative" and (not per_context):
+            train_dataset = ConcatDataset(train_datasets[:context])
+        # -but if "cummulative"+[per_context]: training on each context must be separate, as a trick to achieve this,
+        #                                      all contexts so far are treated as replay (& there is no current batch)
+        if baseline=="cummulative" and per_context:
+            ReplayStoredData = True
             previous_datasets = train_datasets
 
-        # Add exemplars (if available) to current dataset (if requested)
-        if add_exemplars and task>1:
-            target_transform = (lambda y, x=classes_per_task: y%x) if scenario=="domain" else None
-            exemplar_dataset = ExemplarDataset(model.exemplar_sets, target_transform=target_transform)
-            training_dataset = ConcatDataset([train_dataset, exemplar_dataset])
+        # Add memory buffer (if available) to current dataset (if requested)
+        if checkattr(model, 'add_buffer') and context>1:
+            if model.scenario=="domain" or per_context_singlehead:
+                target_transform = (lambda y, x=model.classes_per_context: y % x)
+            else:
+                target_transform = None
+            memory_dataset = MemorySetDataset(model.memory_sets, target_transform=target_transform)
+            training_dataset = ConcatDataset([train_dataset, memory_dataset])
         else:
             training_dataset = train_dataset
 
-        # Prepare <dicts> to store running importance estimates and param-values before update ("Synaptic Intelligence")
-        if isinstance(model, ContinualLearner) and (model.si_c>0):
-            W = {}
-            p_old = {}
-            for n, p in model.named_parameters():
-                if p.requires_grad:
-                    n = n.replace('.', '__')
-                    W[n] = p.data.clone().zero_()
-                    p_old[n] = p.data.clone()
+        # Prepare <dicts> to store running importance estimates and param-values before update (needed for SI)
+        if isinstance(model, ContinualLearner) and model.importance_weighting=='si':
+            W, p_old = model.prepare_importance_estimates_dicts()
 
         # Find [active_classes]
-        active_classes = None  # -> for Domain-IL scenario, always all classes are active
-        if scenario == "task":
-            # -for Task-IL scenario, create <list> with for all tasks so far a <list> with the active classes
-            active_classes = [list(range(classes_per_task * i, classes_per_task * (i + 1))) for i in range(task)]
-        elif scenario == "class":
-            # -for Class-IL scenario, create one <list> with active classes of all tasks so far
-            active_classes = list(range(classes_per_task * task))
+        if model.scenario=="task":
+            if not model.singlehead:
+                # -for Task-IL scenario, create <list> with for all contexts so far a <list> with the active classes
+                active_classes = [list(
+                    range(model.classes_per_context * i, model.classes_per_context * (i+1))
+                ) for i in range(context)]
+            else:
+                #--> if a single-headed output layer is used in the Task-IL scenario, all output units are always active
+                active_classes = None
+        elif model.scenario=="domain":
+            # -for Domain-IL scenario, always all classes are active
+            active_classes = None
+        elif model.scenario=="class":
+            # -for Class-IL scenario, the active classes are determined by [model.neg_samples]
+            if model.neg_samples=="all-so-far":
+                # --> one <list> with active classes of all contexts so far
+                active_classes = list(range(model.classes_per_context * context))
+            elif model.neg_samples=="all":
+                #--> always all classes are active
+                active_classes = None
+            elif model.neg_samples=="current":
+                #--> only those classes in the current or replayed context are active (i.e., train "as if Task-IL")
+                active_classes = [list(
+                    range(model.classes_per_context * i, model.classes_per_context * (i + 1))
+                ) for i in range(context)]
 
-        # Reset state of optimizer(s) for every task (if requested)
-        if model.optim_type=="adam_reset":
+        # Reset state of optimizer(s) for every context (if requested)
+        if (not model.label=="SeparateClassifiers") and model.optim_type=="adam_reset":
             model.optimizer = optim.Adam(model.optim_list, betas=(0.9, 0.999))
         if (generator is not None) and generator.optim_type=="adam_reset":
             generator.optimizer = optim.Adam(model.optim_list, betas=(0.9, 0.999))
 
         # Initialize # iters left on current data-loader(s)
         iters_left = iters_left_previous = 1
-        if scenario=="task":
-            up_to_task = task if replay_mode=="offline" else task-1
-            iters_left_previous = [1]*up_to_task
-            data_loader_previous = [None]*up_to_task
+        if per_context:
+            up_to_context = context if baseline=="cummulative" else context-1
+            iters_left_previous = [1]*up_to_context
+            data_loader_previous = [None]*up_to_context
 
         # Define tqdm progress bar(s)
         progress = tqdm.tqdm(range(1, iters+1))
@@ -106,125 +173,169 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class",classes
             # Update # iters left on current data-loader(s) and, if needed, create new one(s)
             iters_left -= 1
             if iters_left==0:
-                data_loader = iter(utils.get_data_loader(training_dataset, batch_size, cuda=cuda, drop_last=True))
-                # NOTE:  [train_dataset]  is training-set of current task
-                #      [training_dataset] is training-set of current task with stored exemplars added (if requested)
+                data_loader = iter(get_data_loader(training_dataset, batch_size, cuda=cuda, drop_last=True))
+                # NOTE:  [train_dataset]  is training-set of current context
+                #      [training_dataset] is training-set of current context with stored samples added (if requested)
                 iters_left = len(data_loader)
-            if Exact:
-                if scenario=="task":
-                    up_to_task = task if replay_mode=="offline" else task-1
-                    batch_size_replay = int(np.ceil(batch_size/up_to_task)) if (up_to_task>1) else batch_size
-                    # -in Task-IL scenario, need separate replay for each task
-                    for task_id in range(up_to_task):
-                        batch_size_to_use = min(batch_size_replay, len(previous_datasets[task_id]))
-                        iters_left_previous[task_id] -= 1
-                        if iters_left_previous[task_id]==0:
-                            data_loader_previous[task_id] = iter(utils.get_data_loader(
-                                previous_datasets[task_id], batch_size_to_use, cuda=cuda, drop_last=True
+            if ReplayStoredData:
+                if per_context:
+                    up_to_context = context if baseline=="cummulative" else context-1
+                    batch_size_replay = int(np.ceil(batch_size/up_to_context)) if (up_to_context>1) else batch_size
+                    # -if different active classes per context (e.g., Task-IL), need separate replay for each context
+                    for context_id in range(up_to_context):
+                        batch_size_to_use = min(batch_size_replay, len(previous_datasets[context_id]))
+                        iters_left_previous[context_id] -= 1
+                        if iters_left_previous[context_id]==0:
+                            data_loader_previous[context_id] = iter(get_data_loader(
+                                previous_datasets[context_id], batch_size_to_use, cuda=cuda, drop_last=True
                             ))
-                            iters_left_previous[task_id] = len(data_loader_previous[task_id])
+                            iters_left_previous[context_id] = len(data_loader_previous[context_id])
                 else:
                     iters_left_previous -= 1
                     if iters_left_previous==0:
                         batch_size_to_use = min(batch_size, len(ConcatDataset(previous_datasets)))
-                        data_loader_previous = iter(utils.get_data_loader(ConcatDataset(previous_datasets),
-                                                                          batch_size_to_use, cuda=cuda, drop_last=True))
+                        data_loader_previous = iter(get_data_loader(ConcatDataset(previous_datasets),
+                                                                    batch_size_to_use, cuda=cuda, drop_last=True))
                         iters_left_previous = len(data_loader_previous)
 
 
             # -----------------Collect data------------------#
 
             #####-----CURRENT BATCH-----#####
-            if replay_mode=="offline" and scenario=="task":
+            if baseline=="cummulative" and per_context:
                 x = y = scores = None
             else:
-                x, y = next(data_loader)                                    #--> sample training data of current task
-                y = y-classes_per_task*(task-1) if scenario=="task" else y  #--> ITL: adjust y-targets to 'active range'
-                x, y = x.to(device), y.to(device)                           #--> transfer them to correct device
-                # If --bce, --bce-distill & scenario=="class", calculate scores of current batch with previous model
+                x, y = next(data_loader)                             #--> sample training data of current context
+                y = y-model.classes_per_context*(context-1) if per_context and not per_context_singlehead else y
+                # --> adjust the y-targets to the 'active range'
+                x, y = x.to(device), y.to(device)                    #--> transfer them to correct device
+                # If --bce & --bce-distill, calculate scores for past classes of current batch with previous model
                 binary_distillation = hasattr(model, "binaryCE") and model.binaryCE and model.binaryCE_distill
-                if binary_distillation and scenario=="class" and (previous_model is not None):
+                if binary_distillation and model.scenario in ("class", "all") and (previous_model is not None):
                     with torch.no_grad():
-                        scores = previous_model(x)[:, :(classes_per_task * (task - 1))]
+                        scores = previous_model.classify(
+                            x, no_prototypes=True
+                        )[:, :(model.classes_per_context * (context - 1))]
                 else:
                     scores = None
 
 
             #####-----REPLAYED BATCH-----#####
-            if not Exact and not Generative and not Current:
-                x_ = y_ = scores_ = None   #-> if no replay
+            if not ReplayStoredData and not ReplayGeneratedData and not ReplayCurrentData:
+                x_ = y_ = scores_ = context_used = None   #-> if no replay
 
-            ##-->> Exact Replay <<--##
-            if Exact:
-                scores_ = None
-                if scenario in ("domain", "class"):
+            ##-->> Replay of stored data <<--##
+            if ReplayStoredData:
+                scores_ = context_used = None
+                if not per_context:
                     # Sample replayed training data, move to correct device
                     x_, y_ = next(data_loader_previous)
                     x_ = x_.to(device)
                     y_ = y_.to(device) if (model.replay_targets=="hard") else None
-                    # If required, get target scores (i.e, [scores_]         -- using previous model, with no_grad()
+                    # If required, get target scores (i.e, [scores_])         -- using previous model, with no_grad()
                     if (model.replay_targets=="soft"):
                         with torch.no_grad():
-                            scores_ = previous_model(x_)
-                        scores_ = scores_[:, :(classes_per_task*(task-1))] if scenario=="class" else scores_
-                        #-> when scenario=="class", zero probabilities will be added in the [utils.loss_fn_kd]-function
-                elif scenario=="task":
-                    # Sample replayed training data, wrap in (cuda-)Variables and store in lists
+                            scores_ = previous_model.classify(x_, no_prototypes=True)
+                        if model.scenario=="class" and model.neg_samples=="all-so-far":
+                            scores_ = scores_[:, :(model.classes_per_context*(context-1))]
+                            #-> if [scores_] is not same length as [x_], zero probs are added in [loss_fn_kd]-function
+                else:
+                    # Sample replayed training data, move to correct device and store in lists
                     x_ = list()
                     y_ = list()
-                    up_to_task = task if replay_mode=="offline" else task-1
-                    for task_id in range(up_to_task):
-                        x_temp, y_temp = next(data_loader_previous[task_id])
+                    up_to_context = context if baseline=="cummulative" else context-1
+                    for context_id in range(up_to_context):
+                        x_temp, y_temp = next(data_loader_previous[context_id])
                         x_.append(x_temp.to(device))
                         # -only keep [y_] if required (as otherwise unnecessary computations will be done)
                         if model.replay_targets=="hard":
-                            y_temp = y_temp - (classes_per_task*task_id) #-> adjust y-targets to 'active range'
+                            if not per_context_singlehead:
+                                y_temp = y_temp - (model.classes_per_context*context_id) #-> adjust y to 'active range'
                             y_.append(y_temp.to(device))
                         else:
                             y_.append(None)
-                    # If required, get target scores (i.e, [scores_]         -- using previous model
+                    # If required, get target scores (i.e, [scores_])        -- using previous model, with no_grad()
                     if (model.replay_targets=="soft") and (previous_model is not None):
                         scores_ = list()
-                        for task_id in range(up_to_task):
+                        for context_id in range(up_to_context):
                             with torch.no_grad():
-                                scores_temp = previous_model(x_[task_id])
-                            scores_temp = scores_temp[:, (classes_per_task*task_id):(classes_per_task*(task_id+1))]
+                                scores_temp = previous_model.classify(x_[context_id], no_prototypes=True)
+                            if active_classes is not None:
+                                scores_temp = scores_temp[:, active_classes[context_id]]
                             scores_.append(scores_temp)
 
             ##-->> Generative / Current Replay <<--##
-            if Generative or Current:
-                # Get replayed data (i.e., [x_]) -- either current data or use previous generator
-                x_ = x if Current else previous_generator.sample(batch_size)
 
+            #---INPUTS---#
+            if ReplayCurrentData:
+                x_ = x  #--> use current context inputs
+                context_used = None
+
+            if ReplayGeneratedData:
+                conditional_gen = True if previous_generator.label=='CondVAE' and \
+                                          ((previous_generator.per_class and previous_generator.prior=="GMM")
+                                           or checkattr(previous_generator, 'dg_gates')) else False
+                if conditional_gen and per_context:
+                    # -if a cond generator is used with different active classes per context, generate data per context
+                    x_ = list()
+                    context_used = list()
+                    for context_id in range(context-1):
+                        allowed_domains = list(range(context - 1))
+                        allowed_classes = list(
+                            range(model.classes_per_context*context_id, model.classes_per_context*(context_id+1))
+                        )
+                        batch_size_to_use = int(np.ceil(batch_size / (context-1)))
+                        x_temp_ = previous_generator.sample(batch_size_to_use, allowed_domains=allowed_domains,
+                                                            allowed_classes=allowed_classes, only_x=False)
+                        x_.append(x_temp_[0])
+                        context_used.append(x_temp_[2])
+                else:
+                    # -which classes are allowed to be generated? (relevant if conditional generator / decoder-gates)
+                    allowed_classes = None if model.scenario=="domain" else list(
+                        range(model.classes_per_context*(context-1))
+                    )
+                    # -which contexts are allowed to be generated? (only relevant if "Domain-IL" with context-gates)
+                    allowed_domains = list(range(context-1))
+                    # -generate inputs representative of previous contexts
+                    x_temp_ = previous_generator.sample(batch_size, allowed_classes=allowed_classes,
+                                                        allowed_domains=allowed_domains, only_x=False)
+                    x_ = x_temp_[0] if type(x_temp_)==tuple else x_temp_
+                    context_used = x_temp_[2] if type(x_temp_)==tuple else None
+
+            #---OUTPUTS---#
+            if ReplayGeneratedData or ReplayCurrentData:
                 # Get target scores and labels (i.e., [scores_] / [y_]) -- using previous model, with no_grad()
-                # -if there are no task-specific mask, obtain all predicted scores at once
-                if (not hasattr(previous_model, "mask_dict")) or (previous_model.mask_dict is None):
+                if not per_context:
+                    # -if replay does not need to be evaluated separately for each context
                     with torch.no_grad():
-                        all_scores_ = previous_model(x_)
-                # -depending on chosen scenario, collect relevant predicted scores (per task, if required)
-                if scenario in ("domain", "class") and (
-                        (not hasattr(previous_model, "mask_dict")) or (previous_model.mask_dict is None)
-                ):
-                    scores_ = all_scores_[:,:(classes_per_task * (task - 1))] if scenario == "class" else all_scores_
+                        scores_ = previous_model.classify(x_, no_prototypes=True)
+                    if model.scenario == "class" and model.neg_samples == "all-so-far":
+                        scores_ = scores_[:, :(model.classes_per_context * (context - 1))]
+                        # -> if [scores_] is not same length as [x_], zero probs are added in [loss_fn_kd]-function
+                    # -also get the 'hard target'
                     _, y_ = torch.max(scores_, dim=1)
                 else:
-                    # NOTE: it's possible to have scenario=domain with task-mask (so actually it's the Task-IL scenario)
-                    # -[x_] needs to be evaluated according to each previous task, so make list with entry per task
+                    # -[x_] needs to be evaluated according to each past context, so make list with entry per context
                     scores_ = list()
                     y_ = list()
-                    for task_id in range(task - 1):
-                        # -if there is a task-mask (i.e., XdG is used), obtain predicted scores for each task separately
-                        if hasattr(previous_model, "mask_dict") and previous_model.mask_dict is not None:
-                            previous_model.apply_XdGmask(task=task_id + 1)
+                    # -if no context-mask and no conditional generator, all scores can be calculated in one go
+                    if previous_model.mask_dict is None and not type(x_)==list:
+                        with torch.no_grad():
+                            all_scores_ = previous_model.classify(x_, no_prototypes=True)
+                    for context_id in range(context-1):
+                        # -if there is a context-mask (i.e., XdG), obtain predicted scores for each context separately
+                        if previous_model.mask_dict is not None:
+                            previous_model.apply_XdGmask(context=context_id+1)
+                        if previous_model.mask_dict is not None or type(x_)==list:
                             with torch.no_grad():
-                                all_scores_ = previous_model(x_)
-                        if scenario=="domain":
-                            temp_scores_ = all_scores_
-                        else:
-                            temp_scores_ = all_scores_[:,
-                                           (classes_per_task * task_id):(classes_per_task * (task_id + 1))]
-                        _, temp_y_ = torch.max(temp_scores_, dim=1)
+                                all_scores_ = previous_model.classify(x_[context_id] if type(x_)==list else x_,
+                                                                      no_prototypes=True)
+                        temp_scores_ = all_scores_
+                        if active_classes is not None:
+                            temp_scores_ = temp_scores_[:, active_classes[context_id]]
                         scores_.append(temp_scores_)
+                        # - also get hard target
+                        _, temp_y_ = torch.max(temp_scores_, dim=1)
                         y_.append(temp_y_)
 
                 # Only keep predicted y/scores if required (as otherwise unnecessary computations will be done)
@@ -236,112 +347,471 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="class",classes
             if batch_index <= iters:
 
                 # Train the main model with this batch
-                loss_dict = model.train_a_batch(x, y, x_=x_, y_=y_, scores=scores, scores_=scores_,
-                                                active_classes=active_classes, task=task, rnt = 1./task)
+                loss_dict = model.train_a_batch(x, y, x_=x_, y_=y_, scores=scores, scores_=scores_, rnt = 1./context,
+                                                contexts_=context_used, active_classes=active_classes, context=context)
 
-                # Update running parameter importance estimates in W
-                if isinstance(model, ContinualLearner) and (model.si_c>0):
-                    for n, p in model.named_parameters():
-                        if p.requires_grad:
-                            n = n.replace('.', '__')
-                            if p.grad is not None:
-                                W[n].add_(-p.grad*(p.detach()-p_old[n]))
-                            p_old[n] = p.detach().clone()
+                # Update running parameter importance estimates in W (needed for SI)
+                if isinstance(model, ContinualLearner) and model.importance_weighting=='si':
+                    model.update_importance_estimates(W, p_old)
 
-                # Fire callbacks (for visualization of training-progress / evaluating performance after each task)
+                # Fire callbacks (for visualization of training-progress / evaluating performance after each context)
                 for loss_cb in loss_cbs:
                     if loss_cb is not None:
-                        loss_cb(progress, batch_index, loss_dict, task=task)
+                        loss_cb(progress, batch_index, loss_dict, context=context)
                 for eval_cb in eval_cbs:
                     if eval_cb is not None:
-                        eval_cb(model, batch_index, task=task)
+                        eval_cb(model, batch_index, context=context)
                 if model.label == "VAE":
                     for sample_cb in sample_cbs:
                         if sample_cb is not None:
-                            sample_cb(model, batch_index, task=task)
+                            sample_cb(model, batch_index, context=context)
 
 
             #---> Train GENERATOR
             if generator is not None and batch_index <= gen_iters:
 
                 # Train the generator with this batch
-                loss_dict = generator.train_a_batch(x, y, x_=x_, y_=y_, scores_=scores_, active_classes=active_classes,
-                                                    task=task, rnt=1./task)
+                loss_dict = generator.train_a_batch(x, x_=x_, rnt=1./context)
 
                 # Fire callbacks on each iteration
                 for loss_cb in gen_loss_cbs:
                     if loss_cb is not None:
-                        loss_cb(progress_gen, batch_index, loss_dict, task=task)
+                        loss_cb(progress_gen, batch_index, loss_dict, context=context)
                 for sample_cb in sample_cbs:
                     if sample_cb is not None:
-                        sample_cb(generator, batch_index, task=task)
+                        sample_cb(generator, batch_index, context=context)
 
 
-        ##----------> UPON FINISHING EACH TASK...
+        ##----------> UPON FINISHING EACH CONTEXT...
 
         # Close progres-bar(s)
         progress.close()
         if generator is not None:
             progress_gen.close()
 
-        # EWC: estimate Fisher Information matrix (FIM) and update term for quadratic penalty
-        if isinstance(model, ContinualLearner) and (model.ewc_lambda>0):
+        # Parameter regularization: update and compute the parameter importance estimates
+        if context<len(train_datasets) and isinstance(model, ContinualLearner):
             # -find allowed classes
-            allowed_classes = list(
-                range(classes_per_task*(task-1), classes_per_task*task)
-            ) if scenario=="task" else (list(range(classes_per_task*task)) if scenario=="class" else None)
-            # -if needed, apply correct task-specific mask
+            allowed_classes = active_classes[-1] if (per_context and not per_context_singlehead) else active_classes
+            # -if needed, apply correct context-specific mask
             if model.mask_dict is not None:
-                model.apply_XdGmask(task=task)
-            # -estimate FI-matrix
-            model.estimate_fisher(training_dataset, allowed_classes=allowed_classes)
+                model.apply_XdGmask(context=context)
+            ##--> EWC/NCL: estimate the Fisher Information matrix
+            if model.importance_weighting=='fisher' and (model.weight_penalty or model.precondition):
+                if model.fisher_kfac:
+                    model.estimate_kfac_fisher(training_dataset, allowed_classes=allowed_classes)
+                else:
+                    model.estimate_fisher(training_dataset, allowed_classes=allowed_classes)
+            ##--> OWM: calculate and update the projection matrix
+            if model.importance_weighting=='owm' and (model.weight_penalty or model.precondition):
+                model.estimate_owm_fisher(training_dataset, allowed_classes=allowed_classes)
+            ##--> SI: calculate and update the normalized path integral
+            if model.importance_weighting=='si' and (model.weight_penalty or model.precondition):
+                model.update_omega(W, model.epsilon)
 
-        # SI: calculate and update the normalized path integral
-        if isinstance(model, ContinualLearner) and (model.si_c>0):
-            model.update_omega(W, model.epsilon)
-
-        # EXEMPLARS: update exemplar sets
-        if (add_exemplars or use_exemplars) or replay_mode=="exemplars":
-            exemplars_per_class = int(np.floor(model.memory_budget / (classes_per_task*task)))
-            # reduce examplar-sets
-            model.reduce_exemplar_sets(exemplars_per_class)
+        # MEMORY BUFFER: update the memory buffer
+        if checkattr(model, 'use_memory_buffer'):
+            samples_per_class = model.budget_per_class if (not model.use_full_capacity) else int(
+                np.floor((model.budget_per_class*len(train_datasets))/context)
+            )
+            # reduce examplar-sets (only needed when '--use-full-capacity' is selected)
+            model.reduce_memory_sets(samples_per_class)
             # for each new class trained on, construct examplar-set
-            new_classes = list(range(classes_per_task)) if scenario=="domain" else list(range(classes_per_task*(task-1),
-                                                                                              classes_per_task*task))
+            new_classes = list(range(model.classes_per_context)) if (
+                    model.scenario=="domain" or per_context_singlehead
+            ) else list(range(model.classes_per_context*(context-1), model.classes_per_context*context))
             for class_id in new_classes:
                 # create new dataset containing only all examples of this class
                 class_dataset = SubDataset(original_dataset=train_dataset, sub_labels=[class_id])
-                # based on this dataset, construct new exemplar-set for this class
-                model.construct_exemplar_set(dataset=class_dataset, n=exemplars_per_class)
+                # based on this dataset, construct new memory-set for this class
+                allowed_classes = active_classes[-1] if per_context and not per_context_singlehead else active_classes
+                model.construct_memory_set(dataset=class_dataset, n=samples_per_class, label_set=allowed_classes)
             model.compute_means = True
 
-        # Calculate statistics required for metrics
-        for metric_cb in metric_cbs:
-            if metric_cb is not None:
-                metric_cb(model, iters, task=task)
+        # Run the callbacks after finishing each context
+        for context_cb in context_cbs:
+            if context_cb is not None:
+                context_cb(model, iters, context=context)
 
         # REPLAY: update source for replay
-        previous_model = copy.deepcopy(model).eval()
-        if replay_mode == 'generative':
-            Generative = True
-            previous_generator = copy.deepcopy(generator).eval() if generator is not None else previous_model
-        elif replay_mode == 'current':
-            Current = True
-        elif replay_mode in ('exemplars', 'exact'):
-            Exact = True
-            if replay_mode == "exact":
-                previous_datasets = train_datasets[:task]
-            else:
-                if scenario == "task":
-                    previous_datasets = []
-                    for task_id in range(task):
-                        previous_datasets.append(
-                            ExemplarDataset(
-                                model.exemplar_sets[
-                                (classes_per_task * task_id):(classes_per_task * (task_id + 1))],
-                                target_transform=lambda y, x=classes_per_task * task_id: y + x)
-                        )
+        if context<len(train_datasets) and hasattr(model, 'replay_mode'):
+            previous_model = copy.deepcopy(model).eval()
+            if model.replay_mode == 'generative':
+                ReplayGeneratedData = True
+                previous_generator = copy.deepcopy(generator).eval() if generator is not None else previous_model
+            elif model.replay_mode == 'current':
+                ReplayCurrentData = True
+            elif model.replay_mode in ('buffer', 'all'):
+                ReplayStoredData = True
+                if model.replay_mode == "all":
+                    previous_datasets = train_datasets[:context]
                 else:
-                    target_transform = (lambda y, x=classes_per_task: y % x) if scenario == "domain" else None
-                    previous_datasets = [
-                        ExemplarDataset(model.exemplar_sets, target_transform=target_transform)]
+                    if per_context:
+                        previous_datasets = []
+                        for context_id in range(context):
+                            previous_datasets.append(MemorySetDataset(
+                                model.memory_sets[
+                                    (model.classes_per_context * context_id):(model.classes_per_context*(context_id+1))
+                                ],
+                                target_transform=(lambda y, x=model.classes_per_context * context_id: y + x) if (
+                                    not per_context_singlehead
+                                ) else (lambda y, x=model.classes_per_context: y % x)
+                            ))
+                    else:
+                        target_transform = None if not model.scenario=="domain" else (
+                            lambda y, x=model.classes_per_context: y % x
+                        )
+                        previous_datasets = [MemorySetDataset(model.memory_sets, target_transform=target_transform)]
+
+#------------------------------------------------------------------------------------------------------------#
+
+def train_fromp(model, train_datasets, iters=2000, batch_size=32,
+                loss_cbs=list(), eval_cbs=list(), context_cbs=list(), **kwargs):
+    '''Train a model (with a "train_a_batch" method) on multiple contexts using the FROMP algorithm.
+
+    [model]               <nn.Module> main model to optimize across all contexts
+    [train_datasets]      <list> with for each context the training <DataSet>
+    [iters]               <int>, # of optimization-steps (i.e., # of mini-batches) per context
+    [batch_size]          <int>, # of samples per mini-batch
+    [*_cbs]               <list> of call-back functions to evaluate training-progress
+    '''
+
+    # Set model in training-mode
+    model.train()
+
+    # Use cuda?
+    cuda = model._is_on_cuda()
+    device = model._device()
+
+    # Are there different active classes per context (or just potentially a different mask per context)?
+    per_context = (model.scenario=="task" or (model.scenario=="class" and model.neg_samples=="current"))
+    per_context_singlehead = per_context and (model.scenario=="task" and model.singlehead)
+
+    # Loop over all contexts.
+    for context, train_dataset in enumerate(train_datasets, 1):
+
+        # Find [active_classes]
+        if model.scenario=="task":
+            if not model.singlehead:
+                # -for Task-IL scenario, create <list> with for all contexts so far a <list> with the active classes
+                active_classes = [list(
+                    range(model.classes_per_context * i, model.classes_per_context * (i+1))
+                ) for i in range(context)]
+            else:
+                #--> if a single-headed output layer is used in the Task-IL scenario, all output units are always active
+                active_classes = None
+        elif model.scenario=="domain":
+            # -for Domain-IL scenario, always all classes are active
+            active_classes = None
+        elif model.scenario=="class":
+            # -for Class-IL scenario, the active classes are determined by [model.neg_samples]
+            if model.neg_samples=="all-so-far":
+                # --> one <list> with active classes of all contexts so far
+                active_classes = list(range(model.classes_per_context * context))
+            elif model.neg_samples=="all":
+                #--> always all classes are active
+                active_classes = None
+            elif model.neg_samples=="current":
+                #--> only those classes in the current or replayed context are active (i.e., train "as if Task-IL")
+                active_classes = [list(
+                    range(model.classes_per_context * i, model.classes_per_context * (i + 1))
+                ) for i in range(context)]
+
+        # Find [label_sets] (i.e., when replaying/revisiting/regularizing previous contexts, which labels to consider)
+        label_sets = active_classes if (per_context and not per_context_singlehead) else [active_classes]*context
+        # NOTE: With Class-IL, when revisiting previous contexts, consider all labels up to *now*
+        #       (and not up to when that context was encountered!)
+
+        # FROMP: calculate and store regularisation-term-related quantities
+        if context > 1:
+            model.optimizer.init_context(context-1, reset=(model.optim_type=="adam_reset"),
+                                         classes_per_context=model.classes_per_context, label_sets=label_sets)
+
+        # Initialize # iters left on current data-loader(s)
+        iters_left = 1
+
+        # Define tqdm progress bar(s)
+        progress = tqdm.tqdm(range(1, iters+1))
+
+        # Loop over all iterations
+        for batch_index in range(1, iters+1):
+
+            # Update # iters left on current data-loader(s) and, if needed, create new one(s)
+            iters_left -= 1
+            if iters_left==0:
+                data_loader = iter(get_data_loader(train_dataset, batch_size, cuda=cuda, drop_last=True))
+                iters_left = len(data_loader)
+
+            # -----------------Collect data------------------#
+            x, y = next(data_loader)           #--> sample training data of current context
+            y = y - model.classes_per_context * (context - 1) if (per_context and not per_context_singlehead) else y
+            # --> adjust the y-targets to the 'active range'
+            x, y = x.to(device), y.to(device)  # --> transfer them to correct device
+
+            #---> Train MAIN MODEL
+            if batch_index <= iters:
+
+                # Optimiser step
+                loss_dict = model.optimizer.step(x, y, label_sets, context-1, model.classes_per_context)
+
+                # Fire callbacks (for visualization of training-progress / evaluating performance after each context)
+                for loss_cb in loss_cbs:
+                    if loss_cb is not None:
+                        loss_cb(progress, batch_index, loss_dict, context=context)
+                for eval_cb in eval_cbs:
+                    if eval_cb is not None:
+                        eval_cb(model, batch_index, context=context)
+
+        ##----------> UPON FINISHING EACH CONTEXT...
+
+        # Close progres-bar(s)
+        progress.close()
+
+        # MEMORY BUFFER: update the memory buffer
+        if checkattr(model, 'use_memory_buffer'):
+            samples_per_class = model.budget_per_class if (not model.use_full_capacity) else int(
+                np.floor((model.budget_per_class*len(train_datasets))/context)
+            )
+            # reduce examplar-sets (only needed when '--use-full-capacity' is selected)
+            model.reduce_memory_sets(samples_per_class)
+            # for each new class trained on, construct examplar-set
+            new_classes = list(range(model.classes_per_context)) if (
+                    model.scenario=="domain" or per_context_singlehead
+            ) else list(range(model.classes_per_context*(context-1), model.classes_per_context*context))
+            for class_id in new_classes:
+                # create new dataset containing only all examples of this class
+                class_dataset = SubDataset(original_dataset=train_dataset, sub_labels=[class_id])
+                # based on this dataset, construct new memory-set for this class
+                allowed_classes = active_classes[-1] if per_context and not per_context_singlehead else active_classes
+                model.construct_memory_set(dataset=class_dataset, n=samples_per_class, label_set=allowed_classes)
+            model.compute_means = True
+
+        # FROMP: update covariance (\Sigma)
+        if context<len(train_datasets):
+            memorable_loader = DataLoader(dataset=train_dataset, batch_size=6, shuffle=False, num_workers=3)
+            model.optimizer.update_fisher(
+                memorable_loader,
+                label_set=active_classes[context-1] if (per_context and not per_context_singlehead) else active_classes
+            )
+
+        # Run the callbacks after finishing each context
+        for context_cb in context_cbs:
+            if context_cb is not None:
+                context_cb(model, iters, context=context)
+
+#------------------------------------------------------------------------------------------------------------#
+
+def train_gen_classifier(model, train_datasets, iters=2000, epochs=None, batch_size=32,
+                         loss_cbs=list(), sample_cbs=list(), eval_cbs=list(), context_cbs=list(), **kwargs):
+    '''Train a generative classifier with a separate VAE per class.
+
+    [model]               <nn.Module> the generative classifier to train
+    [train_datasets]      <list> with for each class the training <DataSet>
+    [iters]               <int>, # of optimization-steps (i.e., # of mini-batches) per class
+    [batch_size]          <int>, # of samples per mini-batch
+    [*_cbs]               <list> of call-back functions to evaluate training-progress
+    '''
+
+    # Use cuda?
+    device = model._device()
+    cuda = model._is_on_cuda()
+
+    # Loop over all contexts.
+    classes_in_current_context = 0
+    context = 1
+    for class_id, train_dataset in enumerate(train_datasets):
+
+        # Initialize # iters left on data-loader(s)
+        iters_left = 1
+
+        if epochs is not None:
+            data_loader = iter(get_data_loader(train_dataset, batch_size, cuda=cuda, drop_last=False))
+            iters = len(data_loader)*epochs
+
+        # Define a tqdm progress bar(s)
+        progress = tqdm.tqdm(range(1, iters+1))
+
+        # Loop over all iterations
+        for batch_index in range(1, iters+1):
+
+            # Update # iters left on current data-loader(s) and, if needed, create new one(s)
+            iters_left -= 1
+            if iters_left==0:
+                data_loader = iter(get_data_loader(train_dataset, batch_size, cuda=cuda,
+                                                   drop_last=True if epochs is None else False))
+                iters_left = len(data_loader)
+
+            # Collect data
+            x, y = next(data_loader)                                    #--> sample training data of current context
+            x, y = x.to(device), y.to(device)                           #--> transfer them to correct device
+            #y = y.expand(1) if len(y.size())==1 else y                 #--> hack for if batch-size is 1
+
+            # Select model to be trained
+            model_to_be_trained = getattr(model, "vae{}".format(class_id))
+
+            # Train the VAE model of this class with this batch
+            loss_dict = model_to_be_trained.train_a_batch(x)
+
+            # Fire callbacks (for visualization of training-progress)
+            for loss_cb in loss_cbs:
+                if loss_cb is not None:
+                    loss_cb(progress, batch_index, loss_dict, class_id=class_id)
+            for eval_cb in eval_cbs:
+                if eval_cb is not None:
+                    eval_cb(model, batch_index+classes_in_current_context*iters, context=context)
+            for sample_cb in sample_cbs:
+                if sample_cb is not None:
+                    sample_cb(model_to_be_trained, batch_index, class_id=class_id)
+
+        # Close progres-bar(s)
+        progress.close()
+
+        # Did a context just finish?
+        classes_in_current_context += 1
+        if classes_in_current_context==model.classes_per_context:
+            # Run the callbacks after finishing each context
+            for context_cb in context_cbs:
+                if context_cb is not None:
+                    context_cb(model, iters, context=context)
+            # Updated counts
+            classes_in_current_context = 0
+            context += 1
+
+#------------------------------------------------------------------------------------------------------------#
+
+def train_on_stream(model, datastream, iters=2000, loss_cbs=list(), eval_cbs=list()):
+    '''Incrementally train a model on a ('task-free') stream of data.
+    Args:
+        model (Classifier): model to be trained, must have a built-in `train_a_batch`-method
+        datastream (DataStream): iterator-object that returns for each iteration the training data
+        iters (int, optional): max number of iterations, could be smaller if `datastream` runs out (default: ``2000``)
+        *_cbs (list of callback-functions, optional): for evaluating training-progress (defaults: empty lists)
+    '''
+
+    # Define tqdm progress bar(s)
+    progress = tqdm.tqdm(range(1, iters + 1))
+
+    ##--> SI: Register starting parameter values
+    if isinstance(model, ContinualLearner) and model.importance_weighting=='si':
+        start_new_W = True
+        model.register_starting_param_values()
+
+    previous_model = None
+
+    for batch_id, (x,y,c) in enumerate(datastream, 1):
+
+        if batch_id > iters:
+            break
+
+        ##--> SI: Prepare <dicts> to store running importance estimates and param-values before update
+        if isinstance(model, ContinualLearner) and model.importance_weighting=='si':
+            if start_new_W:
+                W, p_old = model.prepare_importance_estimates_dicts()
+                start_new_W = False
+
+        # Move data to correct device
+        x = x.to(model._device())
+        y = y.to(model._device())
+        if c is not None:
+            c = c.to(model._device())
+
+        # If using separate networks, the y-targets need to be adjusted
+        if model.label == "SeparateClassifiers":
+            for sample_id in range(x.shape[0]):
+                y[sample_id] = y[sample_id] - model.classes_per_context * c[sample_id]
+
+        # Add replay...
+        (x_, y_, c_, scores_) = (None, None, None, None)
+        if hasattr(model, 'replay_mode') and model.replay_mode=='buffer' and previous_model is not None:
+            # ... from the memory buffer
+            (x_, y_, c_) = previous_model.sample_from_buffer(x.shape[0])
+            if model.replay_targets=='soft':
+                with torch.no_grad():
+                    scores_ = previous_model.classify(x_, c_, no_prototypes=True)
+        elif hasattr(model, 'replay_mode') and model.replay_mode=='current' and previous_model is not None:
+            # ... using the data from the current batch (as in LwF)
+            x_ = x
+            if c is not None:
+                c_ = previous_model.sample_contexts(x_.shape[0]).to(model._device())
+            with torch.no_grad():
+                scores_ = previous_model.classify(x, c_, no_prototypes=True)
+                _, y_ = torch.max(scores_, dim=1)
+        # -only keep [y_] or [scores_], depending on whether replay is with 'hard' or 'soft' targets
+        y_ = y_ if (hasattr(model, 'replay_targets') and model.replay_targets == "hard") else None
+        scores_ = scores_ if (hasattr(model, 'replay_targets') and model.replay_targets == "soft") else None
+
+        # Train the model on this batch
+        loss_dict = model.train_a_batch(x, y, c, x_=x_, y_=y_, c_=c_, scores_=scores_, rnt=0.5)
+
+        ##--> SI: Update running parameter importance estimates in W (needed for SI)
+        if isinstance(model, ContinualLearner) and model.importance_weighting=='si':
+            model.update_importance_estimates(W, p_old)
+
+        # Add the observed data to the memory buffer (if selected by the algorithm that fills the memory buffer)
+        if checkattr(model, 'use_memory_buffer'):
+            model.add_new_samples(x, y, c)
+        if hasattr(model, 'replay_mode') and model.replay_mode == 'current' and c is not None:
+            model.keep_track_of_contexts_so_far(c)
+
+        # Fire callbacks (for visualization of training-progress / evaluating performance after each task)
+        for loss_cb in loss_cbs:
+            if loss_cb is not None:
+                loss_cb(progress, batch_id, loss_dict)
+        for eval_cb in eval_cbs:
+            if eval_cb is not None:
+                eval_cb(model, batch_id, context=None)
+
+        ##--> SI: calculate and update the normalized path integral
+        if isinstance(model, ContinualLearner) and model.importance_weighting=='si' and model.weight_penalty:
+            if (batch_id % model.update_every)==0:
+                model.update_omega(W, model.epsilon)
+                start_new_W = True
+
+        ##--> Replay: update source for replay
+        if hasattr(model, 'replay_mode') and (not model.replay_mode=="none"):
+            if (batch_id % model.update_every)==0:
+                previous_model = copy.deepcopy(model).eval()
+
+    # Close progres-bar(s)
+    progress.close()
+
+#------------------------------------------------------------------------------------------------------------#
+
+def train_gen_classifier_on_stream(model, datastream, iters=2000, loss_cbs=list(), eval_cbs=list()):
+    '''Incrementally train a generative classifier model on a ('task-free') stream of data.
+    Args:
+        model (Classifier): generative classifier, each generative model must have a built-in `train_a_batch`-method
+        datastream (DataStream): iterator-object that returns for each iteration the training data
+        iters (int, optional): max number of iterations, could be smaller if `datastream` runs out (default: ``2000``)
+        *_cbs (list of callback-functions, optional): for evaluating training-progress (defaults: empty lists)
+    '''
+
+    # Define tqdm progress bar(s)
+    progress = tqdm.tqdm(range(1, iters + 1))
+
+    for batch_id, (x,y,_) in enumerate(datastream, 1):
+
+        if batch_id > iters:
+            break
+
+        # Move data to correct device
+        x = x.to(model._device())
+        y = y.to(model._device())
+
+        # Cycle through all classes. For each class present, take training step on corresponding generative model
+        for class_id in range(model.classes):
+            if class_id in y:
+                x_to_use = x[y==class_id]
+                loss_dict = getattr(model, "vae{}".format(class_id)).train_a_batch(x_to_use)
+                # NOTE: this way, only the [lost_dict] of the last class present in the batch enters into the [loss_cb]
+
+        # Fire callbacks (for visualization of training-progress / evaluating performance after each task)
+        for loss_cb in loss_cbs:
+            if loss_cb is not None:
+                loss_cb(progress, batch_id, loss_dict)
+        for eval_cb in eval_cbs:
+            if eval_cb is not None:
+                eval_cb(model, batch_id, context=None)
+
+    # Close progres-bar(s)
+    progress.close()

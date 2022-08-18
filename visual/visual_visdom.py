@@ -1,21 +1,16 @@
 import numpy as np
-from visdom import Visdom
-
 
 _WINDOW_CASH = {}
 
 
-def _vis(env='main'):
-    return Visdom(env=env)
+def visualize_images(tensor, title, env, win=None, w=400, h=400, nrow=8):
+    '''Plot images contained in 4D-tensor [tensor] to visdom-server.'''
+    options = dict(title=title, width=w, height=h)
+    win = title if win is None else win
+    _WINDOW_CASH[win] = env.images(tensor, win=_WINDOW_CASH.get(win), nrow=nrow, opts=options)
 
 
-def visualize_images(tensor, name, env='main', w=400, h=400, nrow=8):
-    '''Plot images contained in [tensor] to visdom-server.'''
-    options = dict(title=name, width=w, height=h)
-    _WINDOW_CASH[name] = _vis(env).images(tensor.cpu().numpy(), win=_WINDOW_CASH.get(name), nrow=nrow, opts=options)
-
-
-def visualize_scalars(scalars, names, title, iteration, env='main', ylabel=None):
+def visualize_scalars(scalars, names, title, iteration, env, ylabel=None):
     '''Continually update line-plot with numbers arriving in [scalars].'''
     assert len(scalars) == len(names)
 
@@ -35,7 +30,6 @@ def visualize_scalars(scalars, names, title, iteration, env='main', ylabel=None)
 
     # Update plot (or start new one if not yet present)
     if title in _WINDOW_CASH:
-        #_vis(env).updateTrace(X=X, Y=Y, win=_WINDOW_CASH[title], opts=options)          # for older versions of visdom
-        _vis(env).line(X=X, Y=Y, win=_WINDOW_CASH[title], opts=options, update='append') # for newer versions of visdom
+        env.line(X=X, Y=Y, win=_WINDOW_CASH[title], opts=options, update='append')
     else:
-        _WINDOW_CASH[title] = _vis(env).line(X=X, Y=Y, opts=options)
+        _WINDOW_CASH[title] = env.line(X=X, Y=Y, opts=options)
