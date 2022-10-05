@@ -1,7 +1,7 @@
 # Continual Learning
 This is a PyTorch implementation of the continual learning experiments with deep neural networks described in the
 following article:
-* Three types of incremental learning (under review; a workshop version is available here:
+* Three types of incremental learning (under review; a presentation of a workshop verion is available here:
 [link](https://virtual.lifelong-ml.cc/poster_67.html))
 
 This repository mainly supports experiments in the *academic continual learning setting*, whereby
