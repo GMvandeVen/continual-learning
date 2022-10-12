@@ -1,4 +1,6 @@
 # Continual Learning
+[![DOI](https://zenodo.org/badge/150479999.svg)](https://zenodo.org/badge/latestdoi/150479999)
+
 This is a PyTorch implementation of the continual learning experiments with deep neural networks described in the
 following article:
 * Three types of incremental learning (under review; a presentation of a workshop verion is available here:
