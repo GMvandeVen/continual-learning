@@ -124,7 +124,7 @@ def define_rtf_classifier(args, config, device, depth=0):
         recon_loss=args.recon_loss,
         network_output="none" if checkattr(args, "normalize") else "sigmoid",
         deconv_type=args.deconv_type if hasattr(args, "deconv_type") else "standard",
-        dg_gates=utils.checkattr(args, 'dg_gates'),
+        dg_gates=checkattr(args, 'dg_gates'),
         dg_type=args.dg_type if hasattr(args, 'dg_type') else "context",
         dg_prop=args.dg_prop if hasattr(args, 'dg_prop') else 0.,
         contexts=args.contexts if hasattr(args, 'contexts') else None,
@@ -283,7 +283,7 @@ def init_params(model, args, verbose=False):
         utils.bias_init(model, strategy="constant", value=0.01)
 
     ## Use pre-training
-    if utils.checkattr(args, "pre_convE") and hasattr(model, 'depth') and model.depth>0:
+    if checkattr(args, "pre_convE") and hasattr(model, 'depth') and model.depth>0:
         load_name = model.convE.name if (
             not hasattr(args, 'convE_ltag') or args.convE_ltag=="none"
         ) else "{}-{}{}".format(model.convE.name, args.convE_ltag,
@@ -291,7 +291,7 @@ def init_params(model, args, verbose=False):
         utils.load_checkpoint(model.convE, model_dir=args.m_dir, name=load_name, verbose=verbose)
 
     ## Freeze some parameters?
-    if utils.checkattr(args, "freeze_convE") and hasattr(model, 'convE'):
+    if checkattr(args, "freeze_convE") and hasattr(model, 'convE'):
         for param in model.convE.parameters():
             param.requires_grad = False
         model.convE.frozen = True #--> so they're set to .eval() duting trainng to ensure batchnorm-params do not change

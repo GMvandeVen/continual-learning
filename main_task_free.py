@@ -7,17 +7,17 @@ from torch import optim
 # -custom-written libraries
 import utils
 from utils import checkattr
-from param_stamp import get_param_stamp, get_param_stamp_from_args, visdom_name
-from eval import evaluate, callbacks as cb
 from data.load import get_context_set
 from data.labelstream import SharpBoundaryStream, RandomStream, FuzzyBoundaryStream
 from data.datastream import DataStream
-from train import train_on_stream, train_gen_classifier_on_stream
+from models import define_models as define
 from models.cl.continual_learner import ContinualLearner
 from models.cl.memory_buffer_stream import MemoryBuffer
-import options
-from param_values import set_method_options,check_for_errors,set_default_values
-import define_models as define
+from train.train_stream import train_on_stream, train_gen_classifier_on_stream
+from params import options
+from params.param_stamp import get_param_stamp, get_param_stamp_from_args, visdom_name
+from params.param_values import set_method_options,check_for_errors,set_default_values
+from eval import evaluate, callbacks as cb
 
 
 ## Function for specifying input-options and organizing / checking them

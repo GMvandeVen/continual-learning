@@ -2,12 +2,13 @@
 import os
 import numpy as np
 from matplotlib.pyplot import get_cmap
-from param_stamp import get_param_stamp_from_args
-from visual import visual_plt as my_plt
+# -custom-written code
 import main
-from param_values import check_for_errors,set_default_values
-import options
 import utils
+from params.param_stamp import get_param_stamp_from_args
+from params.param_values import check_for_errors,set_default_values
+from params import options
+from visual import visual_plt as my_plt
 
 
 ## Parameter-values to compare

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import os
-from param_stamp import get_param_stamp_from_args
-from visual import visual_plt
 import numpy as np
+# -custom-written code
 import main
-from param_values import check_for_errors,set_default_values
-import options
 from utils import checkattr
+from params.param_stamp import get_param_stamp_from_args
+from params.param_values import check_for_errors,set_default_values
+from params import options
+from visual import visual_plt
 
 
 ## Memory budget values to compare

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 import numpy as np
 import torch
-from data.load import get_singlecontext_datasets
+# -custom-written libraries
 import utils
 from utils import checkattr
+from data.load import get_singlecontext_datasets
+from models import define_models as define
+from train import train_standard
+from params import options
+from params.param_values import check_for_errors,set_default_values
 from eval import callbacks as cb
 from eval import evaluate
-import train
-import options
-import define_models as define
-from param_values import check_for_errors,set_default_values
 
 
 ## Function for specifying input-options and organizing / checking them
@@ -125,7 +126,7 @@ def run(args, verbose=False):
     # (Pre)train model
     if verbose:
         print("\n\n " +' TRAINING '.center(70, '*'))
-    train.train(cnn, train_loader, iters, loss_cbs=loss_cbs, eval_cbs=eval_cbs)
+    train_standard.train(cnn, train_loader, iters, loss_cbs=loss_cbs, eval_cbs=eval_cbs)
 
     # Save (pre)trained conv-layers and the full model
     if checkattr(args, 'save'):

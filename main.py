@@ -5,19 +5,19 @@ import time
 import torch
 from torch import optim
 # -custom-written libraries
-from visual import visual_plt
 import utils
 from utils import checkattr
-from param_stamp import get_param_stamp, get_param_stamp_from_args, visdom_name
-from eval import evaluate, callbacks as cb
 from data.load import get_context_set
-from train import train_cl, train_fromp, train_gen_classifier
+from models import define_models as define
 from models.cl.continual_learner import ContinualLearner
 from models.cl.memory_buffer import MemoryBuffer
-import options
-from param_values import set_method_options,check_for_errors,set_default_values
-import define_models as define
 from models.cl import fromp_optimizer
+from train.train_task_based import train_cl, train_fromp, train_gen_classifier
+from params import options
+from params.param_stamp import get_param_stamp, get_param_stamp_from_args, visdom_name
+from params.param_values import set_method_options,check_for_errors,set_default_values
+from eval import evaluate, callbacks as cb
+from visual import visual_plt
 
 
 ## Function for specifying input-options and organizing / checking them

@@ -1,5 +1,5 @@
 from data.load import get_context_set
-import define_models as define
+from models import define_models as define
 from utils import checkattr
 
 

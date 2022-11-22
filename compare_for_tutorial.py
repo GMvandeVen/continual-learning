@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 import os
 import numpy as np
-from param_stamp import get_param_stamp_from_args
-from visual import visual_plt
+# -custom-written code
 import main
-from utils import checkattr
-from param_values import check_for_errors,set_default_values
-import options
 import utils
+from utils import checkattr
+from params.param_stamp import get_param_stamp_from_args
+from params.param_values import check_for_errors,set_default_values
+from params import options
+from visual import visual_plt
 
 
 ## Function for specifying input-options and organizing / checking them
