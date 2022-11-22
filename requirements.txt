@@ -8,3 +8,4 @@ scikit-learn
 matplotlib
 visdom
 jupyterlab
+ipywidgets

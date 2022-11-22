@@ -64,7 +64,7 @@ def _eval_cb(log, test_datasets, visdom=None, plotting_dict=None, iters_per_cont
 ## Callback-functions for keeping track of loss and training progress ##
 ########################################################################
 
-def _classifier_loss_cb(log, visdom, model=None, contexts=None, iters_per_context=None, progress_bar=True):
+def _classifier_loss_cb(log=1, visdom=None, model=None, contexts=None, iters_per_context=None, progress_bar=True):
     '''Initiates function for keeping track of, and reporting on, the progress of the classifier's training.'''
 
     def cb(bar, iter, loss_dict, context=1):
@@ -111,7 +111,8 @@ def _classifier_loss_cb(log, visdom, model=None, contexts=None, iters_per_contex
     return cb
 
 
-def _VAE_loss_cb(log, visdom, model, contexts=None, iters_per_context=None, replay=False, progress_bar=True):
+def _VAE_loss_cb(log=1, visdom=None, model=None, contexts=None, iters_per_context=None, replay=False,
+                 progress_bar=True):
     '''Initiates functions for keeping track of, and reporting on, the progress of the generator's training.'''
 
     if visdom is not None:
@@ -165,7 +166,7 @@ def _VAE_loss_cb(log, visdom, model, contexts=None, iters_per_context=None, repl
     return cb
 
 
-def _gen_classifier_loss_cb(log, classes=None, visdom=None, progress_bar=True):
+def _gen_classifier_loss_cb(log=1, classes=None, visdom=None, progress_bar=True):
     '''Initiates functions for keeping track of, and reporting on, the progress of the generator's training.'''
 
     if visdom is not None:
