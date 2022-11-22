@@ -340,7 +340,9 @@ def run(args, verbose=False):
     #---------------------#
 
     # Prepare for keeping track of performance during training for plotting in pdf
-    plotting_dict = evaluate.initiate_plotting_dict(args.contexts) if checkattr(args, 'pdf') else None
+    plotting_dict = evaluate.initiate_plotting_dict(args.contexts) if (
+            checkattr(args, 'pdf') or checkattr(args, 'results_dict')
+    ) else None
 
     # Setting up Visdom environment
     if utils.checkattr(args, 'visdom'):
@@ -383,7 +385,7 @@ def run(args, verbose=False):
     context_cbs = [
         cb._eval_cb(log=args.iters, test_datasets=test_datasets, plotting_dict=plotting_dict,
                     visdom=visdom if checkattr(args, 'prototypes') or checkattr(args, 'gen_classifier') else None,
-                    iters_per_context=args.iters, test_size=args.acc_n, S=10)
+                    iters_per_context=args.iters, test_size=args.acc_n, S=args.eval_s)
     ]
 
     #-------------------------------------------------------------------------------------------------#
@@ -472,6 +474,11 @@ def run(args, verbose=False):
     output_file = open(file_name, 'w')
     output_file.write('{}\n'.format(average_accs))
     output_file.close()
+    # -if requested, also save the results-dict (with accuracy after each task)
+    if checkattr(args, 'results_dict'):
+        file_name = "{}/dict-{}--n{}{}".format(args.r_dir, param_stamp, "All" if args.acc_n is None else args.acc_n,
+                                               "--S{}".format(args.eval_s) if checkattr(args, 'gen_classifier') else "")
+        utils.save_object(plotting_dict, file_name)
 
     #-------------------------------------------------------------------------------------------------#
 

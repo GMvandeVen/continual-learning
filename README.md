@@ -3,7 +3,7 @@
 
 This is a PyTorch implementation of the continual learning experiments with deep neural networks described in the
 following article:
-* Three types of incremental learning (under review; a presentation of a workshop verion is available here:
+* Three types of incremental learning (in press; a presentation of a workshop verion is available here:
 [link](https://virtual.lifelong-ml.cc/poster_67.html))
 
 This repository mainly supports experiments in the *academic continual learning setting*, whereby
@@ -63,6 +63,13 @@ the produced outputs (e.g., a summary pdf) are printed to the screen.
 Expected run-time on a standard desktop computer is ~100 minutes, with a GPU it is expected to take ~45 minutes.
 
 
+## NeurIPS tutorial "Lifelong Learning Machines"
+This code repository is used for the
+[NeurIPS 2022 tutorial "Lifelong Learning Machines"](https://sites.google.com/view/neurips2022-llm-tutorial).
+For details and instructions on how to re-run the experiments presented in this tutorial,
+see the file [NeurIPS_tutorial.md](NeurIPS_tutorial.md).
+
+
 ## Re-running the comparisons from the article
 The script `all_results.sh` provides step-by-step instructions for re-running the experiments and re-creating the
 tables and figures reported in the article "Three types of incremental learning".
@@ -114,7 +121,7 @@ For information on further options: `./main_task_free.py -h`. This script suppor
 continual learning methods, but not (yet) all of them. Some methods have been slightly modified to 
 make them suitable for the absence of (known) context boundaries.
 In particular, methods that normally perform a certain consolidation operation at context boundaries, instead perform
-this consolidation operation every `X` iterations, with `X` set with the option `--update-every`. 
+this consolidation operation every `X` iterations, whereby `X` is set with the option `--update-every`. 
 
 ## On-the-fly plots during training
 With this code progress during training can be tracked with on-the-fly plots. This feature requires `visdom`, 
@@ -149,7 +156,7 @@ Please consider citing our papers if you use this code in your research:
   year={2018}
 }
 ```
-[//]: # (If you use this code in your research, please consider citing its accompanying paper:)
+[//]: # (If you use this code in your research, please consider citing the main accompanying paper:)
 
 [//]: # (```)
 
@@ -159,7 +166,7 @@ Please consider citing our papers if you use this code in your research:
 
 [//]: # (  author={van de Ven, Gido M and Tuytelaars, Tinne and Tolias, Andreas S},)
 
-[//]: # (  journal={...},)
+[//]: # (  journal={Nature Machine Intelligence},)
 
 [//]: # (  year={2022})
 
@@ -170,10 +177,11 @@ Please consider citing our papers if you use this code in your research:
 
 ### Acknowledgments
 The research project from which this code originated has been supported by an IBRO-ISN Research Fellowship,
-by the ERC-funded project KeepOnLearning (reference number 101021347),
-by the Lifelong Learning Machines (L2M) program of the Defence Advanced Research Projects Agency (DARPA)
+by the ERC-funded project *KeepOnLearning* (reference number 101021347),
+by the National Institutes of Health (NIH) under awards R01MH109556 (NIH/NIMH) and P30EY002520 (NIH/NEI),
+by the *Lifelong Learning Machines* (L2M) program of the Defence Advanced Research Projects Agency (DARPA)
 via contract number HR0011-18-2-0025 and by the Intelligence Advanced Research Projects Activity (IARPA)
 via Department of Interior/Interior Business Center (DoI/IBC) contract number D16PC00003.
 Disclaimer: views and conclusions contained herein are those of the authors and should not be interpreted
 as necessarily representing the official policies or endorsements, either expressed or implied,
-of DARPA, IARPA, DoI/IBC, or the U.S. Government.
+of NIH, DARPA, IARPA, DoI/IBC, or the U.S. Government.

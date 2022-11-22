@@ -7,6 +7,7 @@ import main
 from utils import checkattr
 from param_values import check_for_errors,set_default_values
 import options
+import utils
 
 
 ## Function for specifying input-options and organizing / checking them
@@ -14,19 +15,13 @@ def handle_inputs():
     # Set indicator-dictionary for correctly retrieving / checking input options
     kwargs = {'comparison': True, 'compare_all': True}
     # Define input options
-    parser = options.define_args(filename="compare", description='Compare performance of CL strategies.')
+    parser = options.define_args(filename="compare", description='Compare and plot performance of CL strategies.')
     parser = options.add_general_options(parser, **kwargs)
     parser = options.add_eval_options(parser, **kwargs)
     parser = options.add_problem_options(parser, **kwargs)
     parser = options.add_model_options(parser, **kwargs)
     parser = options.add_train_options(parser, **kwargs)
     parser = options.add_cl_options(parser, **kwargs)
-    # Should some methods not be included in the comparison?
-    parser.add_argument('--no-context-spec', action='store_true', help="no XdG or Separate Networks")
-    parser.add_argument('--no-reg', action='store_true', help="no EWC or SI")
-    parser.add_argument('--no-fromp', action='store_true', help="no FROMP")
-    parser.add_argument('--no-bir', action='store_true', help="no BI-R")
-    parser.add_argument('--no-agem', action='store_true', help="no A-GEM")
     # Parse, process (i.e., set defaults for unselected options) and check chosen options
     args = parser.parse_args()
     args.log_per_context = True
@@ -39,17 +34,16 @@ def handle_inputs():
 def get_results(args):
     # -get param-stamp
     param_stamp = get_param_stamp_from_args(args)
-    # -check whether already run; if not do so
-    file_to_check = '{}/acc-{}{}.txt'.format(args.r_dir, param_stamp,
-                                             "--S{}".format(args.eval_s) if checkattr(args, 'gen_classifier') else "")
+    # -check whether the 'results-dict' is already available; if not, run the experiment
+    file_to_check = '{}/dict-{}--n{}{}.pkl'.format(
+        args.r_dir, param_stamp, "All" if args.acc_n is None else args.acc_n,
+        "--S{}".format(args.eval_s) if checkattr(args, 'gen_classifier') else ""
+    )
     if os.path.isfile(file_to_check):
         print(" already run: {}".format(param_stamp))
-    elif os.path.isfile("{}/mM-{}".format(args.m_dir, param_stamp)):
-        args.train = False
-        print(" ...testing: {}".format(param_stamp))
-        main.run(args)
     else:
         args.train = True
+        args.results_dict = True
         print(" ...running: {}".format(param_stamp))
         main.run(args)
     # -get average accuracy
@@ -58,10 +52,15 @@ def get_results(args):
     file = open(fileName)
     ave = float(file.readline())
     file.close()
+    # -get results-dict
+    dict = utils.load_object(
+        "{}/dict-{}--n{}{}".format(args.r_dir, param_stamp, "All" if args.acc_n is None else args.acc_n,
+                                   "--S{}".format(args.eval_s) if checkattr(args, 'gen_classifier') else "")
+    )
     # -print average accuracy on screen
     print("--> average accuracy: {}".format(ave))
     # -return average accuracy
-    return ave
+    return (dict, ave)
 
 def collect_all(method_dict, seed_list, args, name=None):
     # -print name of method on screen
@@ -103,19 +102,18 @@ if __name__ == '__main__':
     NONE = {}
     NONE = collect_all(NONE, seed_list, args, name="None")
 
-    ## JOINT training (using total number of iterations from all contexts)
-    iters_temp = args.iters
-    args.iters = args.contexts*iters_temp
-    args.joint = True
+    ## JOINT training, again for each context (only using number of iterations from that context)
+    args.cummulative = True
+    args.reinit = True
     JOINT = {}
     JOINT = collect_all(JOINT, seed_list, args, name="Joint")
-    args.joint = False
-    args.iters = iters_temp
+    args.reinit = False
+    args.cummulative = False
 
 
     ###----"CONTEXT-SPECIFIC"----####
 
-    if args.scenario=="task" and not checkattr(args, 'no_context_spec'):
+    if args.scenario=="task":
         ## Separate network per context
         fc_units_temp = args.fc_units
         args.fc_units = args.fc_units_sep
@@ -135,26 +133,23 @@ if __name__ == '__main__':
 
     ###----"PARAMETER REGULARIZATION"----####
 
-    if not checkattr(args, 'no_reg'):
-        ## EWC
-        args.weight_penalty = True
-        args.importance_weighting = 'fisher'
-        args.offline = True
-        args.reg_strength = args.ewc_lambda
-        EWC = {}
-        EWC = collect_all(EWC, seed_list, args, name="EWC")
-        args.weight_penalty = False
-        args.offline = False
+    ## EWC
+    args.weight_penalty = True
+    args.importance_weighting = 'fisher'
+    args.offline = True
+    args.reg_strength = args.ewc_lambda
+    EWC = {}
+    EWC = collect_all(EWC, seed_list, args, name="EWC")
+    args.weight_penalty = False
+    args.offline = False
 
-        ## SI
-        args.weight_penalty = True
-        args.importance_weighting = 'si'
-        args.reg_strength = args.si_c
-        SI = {}
-        SI = collect_all(SI, seed_list, args, name="SI")
-        args.weight_penalty = False
-    else:
-        EWC = SI = None
+    ## SI
+    args.weight_penalty = True
+    args.importance_weighting = 'si'
+    args.reg_strength = args.si_c
+    SI = {}
+    SI = collect_all(SI, seed_list, args, name="SI")
+    args.weight_penalty = False
 
 
     ###----"FUNCTIONAL REGULARIZATION"----####
@@ -168,14 +163,11 @@ if __name__ == '__main__':
     args.distill = False
 
     ## FROMP
-    if not checkattr(args, 'no_fromp'):
-        args.fromp = True
-        args.sample_selection = "fromp"
-        FROMP = {}
-        FROMP = collect_all(FROMP, seed_list, args, name="FROMP")
-        args.fromp = False
-    else:
-        FROMP = None
+    args.fromp = True
+    args.sample_selection = "fromp"
+    FROMP = {}
+    FROMP = collect_all(FROMP, seed_list, args, name="FROMP")
+    args.fromp = False
 
 
     ###----"REPLAY"----###
@@ -186,26 +178,6 @@ if __name__ == '__main__':
     DGR = {}
     DGR = collect_all(DGR, seed_list, args, name="Deep Generative Replay")
 
-    ## BI-R
-    if not checkattr(args, 'no_bir'):
-        args.replay = "generative"
-        args.feedback = True
-        args.hidden = True
-        args.dg_gates = True
-        args.prior = "GMM"
-        args.per_class = True
-        args.distill = True
-        BIR = {}
-        BIR = collect_all(BIR, seed_list, args, name="Brain-Inspired Replay")
-        args.feedback = False
-        args.hidden = False
-        args.dg_gates = False
-        args.prior = "standard"
-        args.per_class = False
-        args.distill = False
-    else:
-        BIR = None
-
     ## Experience Replay
     args.replay = "buffer"
     args.sample_selection = "random"
@@ -213,22 +185,10 @@ if __name__ == '__main__':
     ER = collect_all(ER, seed_list, args, name="Experience Replay (budget = {})".format(args.budget))
     args.replay = "none"
 
-    ## A-GEM
-    if not checkattr(args, 'no_agem'):
-        args.replay = "buffer"
-        args.sample_selection = "random"
-        args.use_replay = "inequality"
-        AGEM = {}
-        AGEM = collect_all(AGEM, seed_list, args, name="A-GEM (budget = {})".format(args.budget))
-        args.replay = "none"
-        args.use_replay = "normal"
-    else:
-        AGEM = None
-
 
     ###----"TEMPLATE-BASED CLASSIFICATION"----####
 
-    if args.scenario=="class" and not args.neg_samples=="current":
+    if args.scenario=="class":
         ## iCaRL
         args.bce = True
         args.bce_distill = True
@@ -265,16 +225,28 @@ if __name__ == '__main__':
     ## For each seed, create list with average test accuracy
     ave_acc = {}
     for seed in seed_list:
-        ave_acc[seed] = [NONE[seed], JOINT[seed],
-                         0 if EWC is None else EWC[seed], 0 if SI is None else SI[seed], LWF[seed],
-                         0 if FROMP is None else FROMP[seed],
-                         DGR[seed], 0 if BIR is None else BIR[seed], ER[seed], 0 if AGEM is None else AGEM[seed]]
-        if args.scenario=="task" and not checkattr(args, 'no_context_spec'):
-            ave_acc[seed].append(XDG[seed])
-            ave_acc[seed].append(SEP[seed])
-        elif args.scenario=="class" and not args.neg_samples=="current":
-            ave_acc[seed].append(ICARL[seed])
-            ave_acc[seed].append(GENCLASS[seed])
+        ave_acc[seed] = [NONE[seed][1], JOINT[seed][1], EWC[seed][1], SI[seed][1], LWF[seed][1], FROMP[seed][1],
+                         DGR[seed][1], ER[seed][1]]
+        if args.scenario=="task":
+            ave_acc[seed].append(XDG[seed][1])
+            ave_acc[seed].append(SEP[seed][1])
+        elif args.scenario=="class":
+            ave_acc[seed].append(ICARL[seed][1])
+            ave_acc[seed].append(GENCLASS[seed][1])
+
+    ## For each seed, create lists with test accuracy throughout training
+    prec = {}
+    for seed in seed_list:
+        # -for plot of average accuracy throughout training
+        key = "average"
+        prec[seed] = [NONE[seed][0][key], JOINT[seed][0][key], EWC[seed][0][key], SI[seed][0][key], LWF[seed][0][key],
+                      FROMP[seed][0][key], DGR[seed][0][key], ER[seed][0][key]]
+        if args.scenario=="task":
+            prec[seed].append(XDG[seed][0][key])
+            prec[seed].append(SEP[seed][0][key])
+        elif args.scenario=="class":
+            prec[seed].append(ICARL[seed][0][key])
+            prec[seed].append(GENCLASS[seed][0][key])
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -284,7 +256,7 @@ if __name__ == '__main__':
     #--------------------------------------------------#
 
     # name for plot
-    plot_name = "summary-{}{}-{}".format(args.experiment, args.contexts, args.scenario)
+    plot_name = "tutorialplots-{}{}-{}".format(args.experiment, args.contexts, args.scenario)
     scheme = "{}-incremental learning".format(args.scenario)
     title = "{}  -  {}".format(args.experiment, scheme)
 
@@ -292,39 +264,17 @@ if __name__ == '__main__':
     names = ["None", "Joint"]
     colors = ["grey", "black"]
     ids = [0, 1]
-    if args.scenario=="task" and not checkattr(args, 'no_context_spec'):
+    if args.scenario=="task":
         names += ['Separate Networks', 'XdG']
         colors += ['dodgerblue', 'deepskyblue']
-        ids += [11, 10]
-    if not checkattr(args, 'no_reg'):
-        names += ['EWC', 'SI']
-        colors += ['darkgreen', 'yellowgreen']
-        ids += [2, 3]
-    names.append('LwF')
-    colors.append('gold')
-    ids.append(4)
-    if not checkattr(args, 'no_fromp'):
-        names.append("FROMP (b={})".format(args.budget))
-        colors.append('goldenrod')
-        ids.append(5)
-    names.append('DGR')
-    colors.append('indianred')
-    ids.append(6)
-    if not checkattr(args, 'no_bir'):
-        names.append('BI-R')
-        colors.append('lightcoral')
-        ids.append(7)
-    names.append("ER (b={})".format(args.budget))
-    colors.append('red')
-    ids.append(8)
-    if not checkattr(args, 'no_agem'):
-        names.append("A-GEM (b={})".format(args.budget))
-        colors.append('orangered')
-        ids.append(9)
-    if args.scenario=="class" and not args.neg_samples=="current":
+        ids += [9, 8]
+    names += ['EWC', 'SI', 'LwF', 'FROMP (b={})'.format(args.budget), 'DGR', "ER (b={})".format(args.budget)]
+    colors += ['darkgreen', 'yellowgreen', 'gold', 'goldenrod', 'indianred', 'red']
+    ids += [2, 3, 4, 5, 6, 7]
+    if args.scenario=="class":
         names += ['Generative Classifier', "iCaRL (b={})".format(args.budget)]
         colors += ['indigo', 'purple']
-        ids += [11, 10]
+        ids += [9, 8]
 
     # open pdf
     pp = visual_plt.open_pdf("{}/{}.pdf".format(args.p_dir, plot_name))
@@ -335,7 +285,7 @@ if __name__ == '__main__':
     if len(seed_list)>1:
         sems = [np.sqrt(np.var([ave_acc[seed][id] for seed in seed_list])/(len(seed_list)-1)) for id in ids]
         cis = [1.96*np.sqrt(np.var([ave_acc[seed][id] for seed in seed_list])/(len(seed_list)-1)) for id in ids]
-    figure = visual_plt.plot_bar(means, names=names, colors=colors, ylabel="average accuracy (after all contexts)",
+    figure = visual_plt.plot_bar(means, names=names, colors=colors, ylabel="Average accuracy (after all contexts)",
                                  title=title, yerr=cis if len(seed_list)>1 else None, ylim=(0,1))
     figure_list.append(figure)
 
@@ -349,6 +299,25 @@ if __name__ == '__main__':
         if i==1:
             print("="*60)
     print("#"*60)
+
+    # line-plot
+    x_axes = NONE[args.seed][0]["x_context"]
+    ave_lines = []
+    sem_lines = []
+    for id in ids:
+        new_ave_line = []
+        new_sem_line = []
+        for line_id in range(len(prec[args.seed][id])):
+            all_entries = [prec[seed][id][line_id] for seed in seed_list]
+            new_ave_line.append(np.mean(all_entries))
+            if len(seed_list) > 1:
+                new_sem_line.append(1.96*np.sqrt(np.var(all_entries)/(len(all_entries)-1)))
+        ave_lines.append(new_ave_line)
+        sem_lines.append(new_sem_line)
+    figure = visual_plt.plot_lines(ave_lines, x_axes=x_axes, line_names=names, colors=colors, title=title,
+                                   xlabel="# of contexts", ylabel="Average accuracy (on contexts so far)",
+                                   list_with_errors=sem_lines if len(seed_list)>1 else None)
+    figure_list.append(figure)
 
     # add all figures to pdf
     for figure in figure_list:

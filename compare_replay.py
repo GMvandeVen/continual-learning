@@ -247,11 +247,11 @@ if __name__ == '__main__':
     lines = [ave_ER, ave_AGEM]
     errors = [sem_ER, sem_AGEM] if args.n_seeds > 1 else None
     line_names = ["ER", "A-GEM"]
-    colors = ["darkgrey", "brown"]
+    colors = ["red", "orangered"]
     if not checkattr(args, 'no_fromp'):
         lines.append(ave_FROMP)
         line_names.append("FROMP")
-        colors.append("indianred")
+        colors.append("goldenrod")
         if args.n_seeds>1:
             errors.append(sem_FROMP)
     if args.scenario=="class":

@@ -52,12 +52,14 @@ def add_eval_options(parser, main=False, comparison=False, pretrain=False, compa
     if main:
         eval_params.add_argument('--pdf', action='store_true', help="generate pdf with results")
     eval_params.add_argument('--visdom', action='store_true', help="use visdom for on-the-fly plots")
+    eval_params.add_argument('--results-dict', action='store_true', help="output dict with results after each task")
     if not comparison:
         eval_params.add_argument('--loss-log', type=int, metavar="N",
                                  help="# iters after which to plot loss (def: # iters)")
         eval_params.add_argument('--acc-log', type=int, metavar="N",
                                  help="# iters after which to plot accuracy (def: # iters)")
-    eval_params.add_argument('--acc-n', type=int, default=1024, help="# samples for evaluating accuracy (for visdom)")
+    eval_params.add_argument('--acc-n', type=int, default=1024,
+                             help="# samples to evaluate accuracy (after each context)")
     if (not no_boundaries) and (not comparison) and (not pretrain):
         eval_params.add_argument('--sample-log', type=int, metavar="N",
                                  help="# iters after which to plot samples (def: # iters)")

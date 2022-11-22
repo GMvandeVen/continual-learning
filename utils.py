@@ -12,9 +12,9 @@ from data.available import AVAILABLE_TRANSFORMS
 
 ##-------------------------------------------------------------------------------------------------------------------##
 
-######################
-## Random utilities ##
-######################
+#######################
+## General utilities ##
+#######################
 
 def checkattr(args, attr):
     '''Check whether attribute exists, whether it's a boolean and whether its value is True.'''

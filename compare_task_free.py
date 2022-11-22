@@ -237,14 +237,14 @@ if __name__ == '__main__':
     ids = [0, 1]
     if args.scenario=="task" and not checkattr(args, 'no_context_spec'):
         names += ['Separate Networks', 'XdG']
-        colors += ['deepskyblue', 'dodgerblue']
+        colors += ['dodgerblue', 'deepskyblue']
         ids += [7, 6]
     if not checkattr(args, 'no_si'):
         names += ['SI']
-        colors += ['forestgreen']
+        colors += ['yellowgreen']
         ids += [2]
     names.append('LwF')
-    colors.append('goldenrod')
+    colors.append('gold')
     ids.append(3)
     names.append("ER (b={})".format(args.budget))
     colors.append('red')

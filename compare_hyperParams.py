@@ -311,7 +311,7 @@ if __name__ == '__main__':
     ###---BI-R---###
     if not utils.checkattr(args, 'no_bir'):
         figure = my_plt.plot_lines([ave_acc_bir], x_axes=dg_prop_list, ylabel=ylabel, line_names=["BI-R"],
-                                   colors=["darkred"], title=title, x_log=False, with_dots=True,
+                                   colors=["lightcoral"], title=title, x_log=False, with_dots=True,
                                    xlabel="BI-R: % of nodes gated in decoder", ylim=ylim, h_line=BASE, h_label="None")
         figure_list.append(figure)
 
