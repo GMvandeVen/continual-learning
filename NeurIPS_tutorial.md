@@ -3,8 +3,8 @@ The code in this repository is used as part of the
 [NeurIPS 2022 tutorial "Lifelong Learning Machines"](https://sites.google.com/view/neurips2022-llm-tutorial).
 
 In Part 2a of the tutorial, an overview is provided of currently used strategies for continual learning.
-In this overview, following
-[van de Ven et al. (2022, *Nature Machine Intelligence*)](https://doi.org/10.1038/s42256-022-00568-3),
+In this overview, following 
+van de Ven et al. (2022, *in press*; [link-to-workshop-version](https://virtual.lifelong-ml.cc/poster_67.html)),
 five computational strategies for continual learning are distinguished:
 
 ![image](figures/strategies.png)
@@ -38,7 +38,7 @@ an empirical comparison is performed in which for each strategy two representati
 
 The comparison is done on the Split MNIST benchmark,
 which is performed according to each of the three continual learning scenarios
-[(van de Ven et al., 2022 *Nature Machine Intelligence*)](https://doi.org/10.1038/s42256-022-00568-3): 
+(van de Ven et al., 2022 *in press*; [link-to-workshop-version](https://virtual.lifelong-ml.cc/poster_67.html)): 
 
 ![image](figures/splitMNIST_schematic.png)
 
