@@ -3,8 +3,7 @@
 
 This is a PyTorch implementation of the continual learning experiments with deep neural networks described in the
 following article:
-* Three types of incremental learning (in press; a presentation of a workshop verion is available here:
-[link](https://virtual.lifelong-ml.cc/poster_67.html))
+* [Three types of incremental learning](https://www.nature.com/articles/s42256-022-00568-3) (2022, *Nature Machine Intelligence*)
 
 This repository mainly supports experiments in the *academic continual learning setting*, whereby
 a classification-based problem is split up into multiple, non-overlapping *contexts*
@@ -158,6 +157,7 @@ Please consider citing our papers if you use this code in your research:
 ```
 [//]: # (If you use this code in your research, please consider citing the main accompanying paper:)
 
+[//]: # ()
 [//]: # (```)
 
 [//]: # (@article{vandeven2022three,)
