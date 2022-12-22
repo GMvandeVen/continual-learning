@@ -40,6 +40,13 @@ chmod +x main*.py compare*.py all_results.sh
 ```
 
 
+## NeurIPS tutorial "Lifelong Learning Machines"
+This code repository is used for the
+[NeurIPS 2022 tutorial "Lifelong Learning Machines"](https://sites.google.com/view/neurips2022-llm-tutorial).
+For details and instructions on how to re-run the experiments presented in this tutorial,
+see the file [NeurIPS_tutorial.md](NeurIPS_tutorial.md).
+
+
 ## Demos
 ##### Demo 1: Single continual learning experiment
 ```bash
@@ -60,13 +67,6 @@ comparing the performance of various methods on the task-incremental learning sc
 Information about the different experiments, their progress and 
 the produced outputs (e.g., a summary pdf) are printed to the screen.
 Expected run-time on a standard desktop computer is ~100 minutes, with a GPU it is expected to take ~45 minutes.
-
-
-## NeurIPS tutorial "Lifelong Learning Machines"
-This code repository is used for the
-[NeurIPS 2022 tutorial "Lifelong Learning Machines"](https://sites.google.com/view/neurips2022-llm-tutorial).
-For details and instructions on how to re-run the experiments presented in this tutorial,
-see the file [NeurIPS_tutorial.md](NeurIPS_tutorial.md).
 
 
 ## Re-running the comparisons from the article
@@ -139,7 +139,21 @@ For more information on `visdom` see <https://github.com/facebookresearch/visdom
 
 
 ### Citation
-Please consider citing our papers if you use this code in your research:
+If you use this code in your research, please consider citing the main accompanying article:
+```
+@article{vandeven2022three,
+  title={Three types of incremental learning},
+  author={van de Ven, Gido M and Tuytelaars, Tinne and Tolias, Andreas S},
+  journal={Nature Machine Intelligence},
+  volume={4},
+  pages={1185--1197},
+  year={2022}
+}
+```
+
+The BibTeX citations for the two preprints that were also produced using this code repository are given below.
+Generally it is however preferred to cite the officially published version of the article,
+but these preprints can be cited for their aspects that do not feature in the published article.
 ```
 @article{vandeven2019three,
   title={Three scenarios for continual learning},
@@ -155,24 +169,6 @@ Please consider citing our papers if you use this code in your research:
   year={2018}
 }
 ```
-[//]: # (If you use this code in your research, please consider citing the main accompanying paper:)
-
-[//]: # ()
-[//]: # (```)
-
-[//]: # (@article{vandeven2022three,)
-
-[//]: # (  title={Three types of incremental learning},)
-
-[//]: # (  author={van de Ven, Gido M and Tuytelaars, Tinne and Tolias, Andreas S},)
-
-[//]: # (  journal={Nature Machine Intelligence},)
-
-[//]: # (  year={2022})
-
-[//]: # (})
-
-[//]: # (```)
 
 
 ### Acknowledgments
