@@ -153,7 +153,7 @@ If you use this code in your research, please consider citing the main accompany
 
 The BibTeX citations for the two preprints that were also produced using this code repository are given below.
 Generally it is however preferred to cite the officially published version of the article,
-but these preprints can be cited for their aspects that do not feature in the published article.
+but these preprints can be cited for aspects not featured in the published article.
 ```
 @article{vandeven2019three,
   title={Three scenarios for continual learning},
