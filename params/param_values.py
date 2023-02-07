@@ -97,7 +97,7 @@ def set_default_values(args, also_hyper_params=True, single_context=False, no_bo
         args.sample_log = args.iters if (not hasattr(args,'sample_log')) or args.sample_log is None else args.sample_log
 
     # -set default-values for certain arguments based on chosen scenario & experiment
-    if hasattr(args, 'scenario') and args.scenario == 'task':
+    if hasattr(args, 'scenario') and args.scenario == 'task' and hasattr(args, 'gating_prop'):
         # -context-specific gating
         args.gating_prop = (
             0.85 if args.experiment == 'CIFAR100' else (0.9 if args.experiment == 'splitMNIST' else 0.6)

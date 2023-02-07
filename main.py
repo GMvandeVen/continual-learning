@@ -385,7 +385,7 @@ def run(args, verbose=False):
     context_cbs = [
         cb._eval_cb(log=args.iters, test_datasets=test_datasets, plotting_dict=plotting_dict,
                     visdom=visdom if checkattr(args, 'prototypes') or checkattr(args, 'gen_classifier') else None,
-                    iters_per_context=args.iters, test_size=args.acc_n, S=args.eval_s)
+                    iters_per_context=args.iters, test_size=args.acc_n, S=args.eval_s if hasattr(args, 'eval_s') else 1)
     ]
 
     #-------------------------------------------------------------------------------------------------#
