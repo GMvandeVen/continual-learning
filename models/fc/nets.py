@@ -43,7 +43,7 @@ class MLP(nn.Module):
                     hidden_sizes = [int(x) for x in np.linspace(hid_size, hid_smooth, num=layers-1)]
                 else:
                     hidden_sizes = [int(x) for x in np.repeat(hid_size, layers - 1)]
-            size_per_layer = [input_size] + hidden_sizes + [output_size]
+            size_per_layer = [input_size] + hidden_sizes + [output_size] if layers>0 else [input_size]
         self.layers = len(size_per_layer)-1
 
         # set label for this module
