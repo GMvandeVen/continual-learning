@@ -221,7 +221,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         for index,(x,y) in enumerate(data_loader):
             # break from for-loop if max number of samples has been reached
             if self.fisher_n is not None:
-                if index >= self.fisher_n:
+                if index > self.fisher_n:
                     break
             # run forward pass of model
             x = x.to(self._device())
@@ -433,6 +433,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
 
         # Estimate the FI-matrix for [self.fisher_n] batches of size 1
         for i, (x, _) in enumerate(data_loader):
+            # break from for-loop if max number of samples has been reached
             if i > n_samples:
                 break
             # run forward pass of model
