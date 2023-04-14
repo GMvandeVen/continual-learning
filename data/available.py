@@ -17,8 +17,18 @@ def clean_dataset(df: pd.DataFrame):
     for col in df.columns:
         if df[col].isnull().sum() > (len(df) * 0.7):
             df.drop(columns = [col], inplace=True)
-    # drop rows that contain NaN values
-    df = df.dropna()
+    # drop rows that contain NaN values and duplicates
+    df.drop_duplicates(inplace=True)
+    df.dropna(inplace=True)
+    # reduce the classes percentage
+    reduce_class(df, LABEL_COLUMN, 'Benign', 0.5)
+    reduce_class(df, LABEL_COLUMN, 'UDPFlood', 0.6)
+    reduce_class(df, LABEL_COLUMN, 'HTTPFlood', 0.43)
+    reduce_class(df, LABEL_COLUMN, 'SlowrateDoS', 0.35)
+    reduce_class(df, LABEL_COLUMN, 'ICMPFlood', 1)
+
+    #  standard normalization
+    
     # change type of True/False columns to bool
     for col in df.columns:
         vals = df[col].unique()
@@ -38,6 +48,10 @@ def clean_dataset(df: pd.DataFrame):
             d[col] = int
     df = df.astype(d)
 
+def reduce_class(df, col_name, class_val, p):
+    indices = df.index[df[col_name] == class_val]
+    df.drop(indices[:int(len(indices) * p)], inplace=True)
+
 def split_dataset(dataframe):
     y_data = dataframe[LABEL_COLUMN].values
     x_data = dataframe.drop(columns=[LABEL_COLUMN]).values
@@ -46,7 +60,7 @@ def split_dataset(dataframe):
 
 class networkDataset(Dataset):
 
-    classes = ['Benign', 'SYNScan', 'TCPConnectScan', 'UDPScan', 'ICMPFlood', 'UDPFlood', 'SYNFlood', 'HTTPFlood', 'SlowrateDoS']
+    #classes = ['Benign', 'SYNScan', 'TCPConnectScan', 'UDPScan', 'ICMPFlood', 'UDPFlood', 'SYNFlood', 'HTTPFlood', 'SlowrateDoS']
 
     @property
     def train_labels(self):
@@ -143,7 +157,7 @@ AVAILABLE_TRANSFORMS = {
         transforms.ToTensor(),
     ],
     '5GNIDD': [
-        #transforms.Pad([0,0,1,0]),
+        #transforms.Pad(1),
         #transforms.ToPILImage(),
         transforms.ToTensor(),
     ],

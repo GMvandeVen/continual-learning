@@ -139,6 +139,8 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
         labels_per_dataset_test = [
             list(np.array(range(classes_per_context))+classes_per_context*context_id) for context_id in range(contexts)
         ]
+        #print('labels per dataset train', labels_per_dataset_train)
+        #print('labels per dataset test', labels_per_dataset_test)
         # split the train and test datasets up into sub-datasets
         train_datasets = []
         for labels in labels_per_dataset_train:
