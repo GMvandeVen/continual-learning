@@ -238,7 +238,7 @@ if __name__ == '__main__':
         args.sample_selection = "herding"
         args.neg_samples = "all-so-far"
         ICARL = {}
-        ICARL = collect_all(ICARL, seed_list, args, name="iCaRL (budget = {})".format(args.budget))
+        #ICARL = collect_all(ICARL, seed_list, args, name="iCaRL (budget = {})".format(args.budget))
         args.bce = False
         args.bce_distill = False
         args.prototypes = False
@@ -254,7 +254,7 @@ if __name__ == '__main__':
         args.hidden = True
         args.lr = 0.001
         GENCLASS = {}
-        GENCLASS = collect_all(GENCLASS, seed_list, args, name="Generative Classifier")
+        #GENCLASS = collect_all(GENCLASS, seed_list, args, name="Generative Classifier")
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -274,8 +274,9 @@ if __name__ == '__main__':
             ave_acc[seed].append(XDG[seed])
             ave_acc[seed].append(SEP[seed])
         elif args.scenario=="class" and not args.neg_samples=="current":
-            ave_acc[seed].append(ICARL[seed])
-            ave_acc[seed].append(GENCLASS[seed])
+            #ave_acc[seed].append(ICARL[seed])
+            #ave_acc[seed].append(GENCLASS[seed])
+            pass
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -323,16 +324,20 @@ if __name__ == '__main__':
         colors.append('orangered')
         ids.append(9)
     if args.scenario=="class" and not args.neg_samples=="current":
-        names += ['Generative Classifier', "iCaRL (b={})".format(args.budget)]
-        colors += ['indigo', 'purple']
-        ids += [11, 10]
+        #names += ['Generative Classifier', "iCaRL (b={})".format(args.budget)]
+        #colors += ['indigo', 'purple']
+        #ids += [11, 10]
+        pass
 
     # open pdf
     pp = visual_plt.open_pdf("{}/{}.pdf".format(args.p_dir, plot_name))
     figure_list = []
 
     # bar-plot
+    print(f"ids: {ids}")
+    print(f"ave_acc[{seed}]: {ave_acc[seed]}")
     means = [np.mean([ave_acc[seed][id] for seed in seed_list]) for id in ids]
+    # means = [np.mean([ave_acc[seed][id] for seed in seed_list]) for id in range(len(ids))]
     if len(seed_list)>1:
         sems = [np.sqrt(np.var([ave_acc[seed][id] for seed in seed_list])/(len(seed_list)-1)) for id in ids]
         cis = [1.96*np.sqrt(np.var([ave_acc[seed][id] for seed in seed_list])/(len(seed_list)-1)) for id in ids]

@@ -11,12 +11,20 @@ LABEL_COLUMN = 'Attack Type'
 
 def clean_dataset(df: pd.DataFrame):
     # drop uneeded columns
-    df.drop(columns=['Unnamed: 0', 'Attack Tool', 'Label'], inplace=True) # Seq
+    to_drop = []
+    columns_to_keep = [LABEL_COLUMN, "tcp", "AckDat", "sHops", "Seq", "RST", "TcpRtt", "REQ", "dMeanPktSz", "Offset", "CON", "FIN", "sTtl", "e", "INT", "Mean", "Status", "icmp", "SrcTCPBase", "e d", "sMeanPktSz", "DstLoss", "Loss", "dTtl", "SrcBytes", "TotBytes"]
+    for col in df.columns:
+        if col.strip() not in columns_to_keep or col == ' e        ':
+            #print('dropping', col)
+            to_drop.append(col) 
+    df.drop(columns=to_drop, inplace=True)
+    #df.drop(columns=['Unnamed: 0', 'Attack Tool', 'Label' if not LABEL_COLUMN == 'Label' else 'Attack Type'], inplace=True) # Seq
     # drop columns that contain a lot of null values
     d = {}
     for col in df.columns:
         if df[col].isnull().sum() > (len(df) * 0.7):
-            df.drop(columns = [col], inplace=True)
+            #df.drop(columns = [col], inplace=True)
+            pass
     # drop rows that contain NaN values and duplicates
     df.drop_duplicates(inplace=True)
     df.dropna(inplace=True)
@@ -28,13 +36,16 @@ def clean_dataset(df: pd.DataFrame):
     reduce_class(df, LABEL_COLUMN, 'ICMPFlood', 1)
 
     #  standard normalization
-    
+
     # change type of True/False columns to bool
     for col in df.columns:
         vals = df[col].unique()
         if len(vals) in [1,2]:
             d[col] = bool
+            #df.drop(columns = [col], inplace=True)
     df = df.astype(d)
+    #print('len', len(df.select_dtypes(exclude=['number']).columns))
+    #print('set', set(df.dtypes))
     # normalize float and int columns
     s = df.select_dtypes(include=['float', 'int'])
     s = (s - s.mean())/s.std()
@@ -47,7 +58,7 @@ def clean_dataset(df: pd.DataFrame):
         if len(vals) in [1,2]:
             d[col] = int
     df = df.astype(d)
-
+    
 def reduce_class(df, col_name, class_val, p):
     indices = df.index[df[col_name] == class_val]
     df.drop(indices[:int(len(indices) * p)], inplace=True)
@@ -66,14 +77,6 @@ class networkDataset(Dataset):
     def train_labels(self):
         return self.targets
     
-    @property
-    def test_labels(self):
-        return self.targets
-    
-    @property
-    def train_data(self):
-        return self.data
-
     @property
     def train_data(self):
         return self.data
@@ -120,7 +123,7 @@ class networkDataset(Dataset):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(np.reshape(vector, (9,9)), mode="L")
+        img = Image.fromarray(np.reshape(vector, (5,5)), mode="L")
 
         #print(img)
 
@@ -187,5 +190,5 @@ DATASET_CONFIGS = {
     'MNIST32': {'size': 32, 'channels': 1, 'classes': 10},
     'CIFAR10': {'size': 32, 'channels': 3, 'classes': 10},
     'CIFAR100': {'size': 32, 'channels': 3, 'classes': 100},
-    '5GNIDD': {'size':9, 'channels': 1, 'classes': 9},
+    '5GNIDD': {'size':5, 'channels': 1, 'classes': 8},
 }

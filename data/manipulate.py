@@ -35,6 +35,7 @@ class SubDataset(Dataset):
                     label = self.dataset.train_labels[index]
                 else:
                     label = self.dataset.target_transform(self.dataset.train_labels[index])
+                #print(self.dataset.train_labels[index], label)
             elif hasattr(self.dataset, "test_labels"):
                 if self.dataset.target_transform is None:
                     label = self.dataset.test_labels[index]

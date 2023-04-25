@@ -87,9 +87,11 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
         config['denormalize'] = AVAILABLE_TRANSFORMS["CIFAR100_denorm"]
     # check for number of contexts
     if contexts > config['classes'] and not name=="permMNIST":
+    #if contexts > config['classes'] and not name=="permMNIST" and not scenario == 'domain':
         raise ValueError("Experiment '{}' cannot have more than {} contexts!".format(name, config['classes']))
     # -how many classes per context?
     classes_per_context = 10 if name=="permMNIST" else int(np.floor(config['classes'] / contexts))
+    #classes_per_context = 2 if scenario == 'domain' else classes_per_context
     config['classes_per_context'] = classes_per_context
     config['output_units'] = classes_per_context if (scenario=='domain' or
                                                     (scenario=="task" and singlehead)) else classes_per_context*contexts
@@ -139,7 +141,7 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
         labels_per_dataset_test = [
             list(np.array(range(classes_per_context))+classes_per_context*context_id) for context_id in range(contexts)
         ]
-        #print('labels per dataset train', labels_per_dataset_train)
+        print('labels per dataset train', labels_per_dataset_train)
         #print('labels per dataset test', labels_per_dataset_test)
         # split the train and test datasets up into sub-datasets
         train_datasets = []
@@ -147,7 +149,9 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
             target_transform = transforms.Lambda(lambda y, x=labels[0]: y-x) if (
                     scenario=='domain' or (scenario=='task' and singlehead)
             ) else None
-            train_datasets.append(SubDataset(trainset, labels, target_transform=target_transform))
+            subdataset = SubDataset(trainset, labels, target_transform=target_transform)
+            train_datasets.append(subdataset)
+            print(labels, len(subdataset))
         test_datasets = []
         for labels in labels_per_dataset_test:
             target_transform = transforms.Lambda(lambda y, x=labels[0]: y-x) if (
