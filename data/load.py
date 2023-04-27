@@ -138,26 +138,34 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
         labels_per_dataset_train = [[label] for label in range(classes)] if train_set_per_class else [
             list(np.array(range(classes_per_context))+classes_per_context*context_id) for context_id in range(contexts)
         ]
+        #labels_per_dataset_train = [[7,1], [2,3], [4,5], [6,0]]
         labels_per_dataset_test = [
             list(np.array(range(classes_per_context))+classes_per_context*context_id) for context_id in range(contexts)
         ]
-        print('labels per dataset train', labels_per_dataset_train)
-        #print('labels per dataset test', labels_per_dataset_test)
+        #labels_per_dataset_test = [[7,1], [2,3], [4,5], [6,0]]
         # split the train and test datasets up into sub-datasets
         train_datasets = []
+        i = 0
+        print('\ntraining contexts:')
         for labels in labels_per_dataset_train:
             target_transform = transforms.Lambda(lambda y, x=labels[0]: y-x) if (
                     scenario=='domain' or (scenario=='task' and singlehead)
             ) else None
             subdataset = SubDataset(trainset, labels, target_transform=target_transform)
             train_datasets.append(subdataset)
-            print(labels, len(subdataset))
+            print(f'context {i}: {labels}, number of samples = {len(subdataset)}')
+            i += 1
+        i = 0
         test_datasets = []
+        print('\ntest contexts:')
         for labels in labels_per_dataset_test:
             target_transform = transforms.Lambda(lambda y, x=labels[0]: y-x) if (
                     scenario=='domain' or (scenario=='task' and singlehead)
             ) else None
-            test_datasets.append(SubDataset(testset, labels, target_transform=target_transform))
+            subdataset = SubDataset(testset, labels, target_transform=target_transform)
+            test_datasets.append(subdataset)
+            print(f'context {i}: {labels}, number of samples = {len(subdataset)}')
+            i += 1
 
     # Return tuple of train- and test-dataset, config-dictionary and number of classes per context
     return ((train_datasets, test_datasets), config)

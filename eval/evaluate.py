@@ -4,6 +4,8 @@ from visual import visual_plt
 from visual import visual_visdom
 from utils import get_data_loader,checkattr
 
+from sklearn.metrics import confusion_matrix
+from data.available import NUM_CLASSES
 
 ####--------------------------------------------------------------------------------------------------------------####
 
@@ -11,8 +13,14 @@ from utils import get_data_loader,checkattr
 ####----CLASSIFIER EVALUATION----####
 ####-----------------------------####
 
+def calc_precision(y, predicted):
+    pass
+
+def calc_recall(y, predicted):
+    pass
+
 def test_acc(model, dataset, batch_size=128, test_size=1024, verbose=True, context_id=None, allowed_classes=None,
-             no_context_mask=False, **kwargs):
+             no_context_mask=False, cm=None, **kwargs):
     '''Evaluate accuracy (= proportion of samples classified correctly) of a classifier ([model]) on [dataset].
 
     [allowed_classes]   None or <list> containing all "active classes" between which should be chosen
@@ -64,6 +72,9 @@ def test_acc(model, dataset, batch_size=128, test_size=1024, verbose=True, conte
             predicted = predicted % model.classes
         # -update statistics
         y = y-label_correction
+        if cm is not None:
+            # confusion matrix with rows as real labels and columns as predictions
+            cm += confusion_matrix(y, predicted, labels=range(NUM_CLASSES))
         total_correct += (predicted == y).sum().item()
         total_tested += len(x)
     accuracy = total_correct / total_tested
@@ -72,7 +83,8 @@ def test_acc(model, dataset, batch_size=128, test_size=1024, verbose=True, conte
     model.train(mode=mode)
     if verbose:
         print('=> accuracy: {:.3f}'.format(accuracy))
-    return accuracy
+    
+    return accuracy if cm is None else accuracy, cm
 
 
 def test_all_so_far(model, datasets, current_context, iteration, test_size=None, no_context_mask=False,

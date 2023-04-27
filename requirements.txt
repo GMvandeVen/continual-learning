@@ -9,3 +9,4 @@ matplotlib
 visdom
 jupyterlab
 ipywidgets
+prettytable
