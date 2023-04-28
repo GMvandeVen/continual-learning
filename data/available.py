@@ -57,8 +57,9 @@ def clean_dataset(df: pd.DataFrame, verbose=False):
         vals = df[col].unique()
         if len(vals) in [1,2]:
             d[col] = bool
-            df.drop(columns=[col], inplace=True)
-    #df = df.astype(d)
+            # to try the dataset version where there are only numerical values
+            # df.drop(columns=[col], inplace=True)
+    df = df.astype(d)
     #print('len', len(df.select_dtypes(exclude=['number']).columns))
     #print('set', set(df.dtypes))
     # normalize float and int columns
@@ -74,9 +75,9 @@ def clean_dataset(df: pd.DataFrame, verbose=False):
             d[col] = int
     df = df.astype(d)
     #print('number of distinct value in class column after cleaning', len(df[LABEL_COLUMN].unique()))
-    for i in range(36 - 33):
-        df[f'nan{i}'] = 0
-    print(f'number of columns {len(df.columns)}')
+    # for i in range(36 - 33):
+    #     df[f'nan{i}'] = 3
+    # print(f'number of columns {len(df.columns)}')
 
 def resample_class(df, class_val, p):
     minority_class = df[df[LABEL_COLUMN] == class_val].copy()
