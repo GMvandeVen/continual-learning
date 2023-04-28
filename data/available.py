@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 import math
 
 LABEL_COLUMN = 'Attack Type'
-NUM_COLUMNS = 36
+NUM_COLUMNS = 81
 IMAGE_EDGE_SIZE = int(math.sqrt(NUM_COLUMNS))
 NUM_CLASSES = 8
 
