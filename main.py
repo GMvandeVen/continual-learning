@@ -476,33 +476,33 @@ def run(args, verbose=False):
 
     # per class performance
     per_class_performance = {
-        'precision': {},
-        'recall': {},
-        'f1-score': {},
-        'accuracy': {},
+        'precision': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
+        'recall': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
+        #'f1-score': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
+        'accuracy': confusion_matrix.diagonal()/confusion_matrix.sum(),
     }
-    for i in range(NUM_CLASSES):
-        tp = confusion_matrix[i][i]
-        precision = per_class_performance['recall'][i] = round(tp / np.sum(confusion_matrix[i]), 2)
-        recall = per_class_performance['precision'][i] = round(tp / np.sum(confusion_matrix[:, i], axis=0), 2)
-        acc = per_class_performance['accuracy'][i] = round(tp / np.sum(confusion_matrix), 2)
-        f1 = per_class_performance['f1-score'][i] = round(2 * (precision * recall) / (precision + recall), 2)
-        if False and verbose:
-            print(f'confusion_matrix[{i}] = {confusion_matrix[i]}')
-            print(f'confusion_matrix.col[{i}] = {[row[i] for row in confusion_matrix]}')
-            print(f'tp = {tp}')
-            #print(f'recall = {recall}, precision = {precision}')
-            #print(f'=> class {i}: \n\tprecision: {precision:.3f} \n\trecall: {recall:.3f} \n\tacc: {acc:.3f} \n\tf1-score: {f1:3f}' )
+    #for i in range(NUM_CLASSES):
+        #tp = confusion_matrix[i][i]
+    # precision = per_class_performance['recall'] = round( tp/ np.sum(confusion_matrix[i]), 2)
+    # recall = per_class_performance['precision'][i] = round(tp / np.sum(confusion_matrix[:, i], axis=0), 2)
+    # acc = per_class_performance['accuracy'][i] = round(tp / np.sum(confusion_matrix), 2)
+    # f1 = per_class_performance['f1-score'][i] = round(2 * (precision * recall) / (precision + recall), 2)
+    if False and verbose:
+        print(f'confusion_matrix[{i}] = {confusion_matrix[i]}')
+        print(f'confusion_matrix.col[{i}] = {[row[i] for row in confusion_matrix]}')
+        print(f'tp = {tp}')
+        #print(f'recall = {recall}, precision = {precision}')
+        #print(f'=> class {i}: \n\tprecision: {precision:.3f} \n\trecall: {recall:.3f} \n\tacc: {acc:.3f} \n\tf1-score: {f1:3f}' )
 
-    # average performance among classes
+    # average performance
     average_performance = {
         'precision': {},
         'recall': {},
-        'f1-score': {},
-        'accuracy': {},
+        #'f1-score': {},
     }
     for metric in average_performance:
-        average_performance[metric] = round(sum(per_class_performance[metric][c] for c in per_class_performance[metric]) / NUM_CLASSES, 2)
+        average_performance[metric] = sum(per_class_performance[metric]) / NUM_CLASSES
+    average_performance['accuracy'] = confusion_matrix.diagonal().sum()/confusion_matrix.sum()
 
     # print results to screen
     print("\n\n"+"#"*60+"\nSUMMARY RESULTS: \n"+"#"*60)
@@ -512,12 +512,12 @@ def run(args, verbose=False):
         tbl = PrettyTable()
         tbl.field_names = range(-1, NUM_CLASSES)
         for metric in per_class_performance.keys():
-            tbl.add_row([metric] + [per_class_performance[metric][i] for i in range(NUM_CLASSES)])
+            tbl.add_row([metric] + [round(per_class_performance[metric][i], 2) for i in range(NUM_CLASSES)])
         print(tbl)
         print("\nAverage perfomance:")
         tbl = PrettyTable()
         tbl.field_names = average_performance.keys()
-        tbl.add_row([average_performance[metric] for metric in tbl.field_names])
+        tbl.add_row([round(average_performance[metric], 2) for metric in tbl.field_names])
         print(tbl)
 
     # -write out to text file

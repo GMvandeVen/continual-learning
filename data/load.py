@@ -3,11 +3,13 @@ import numpy as np
 from torchvision import transforms
 from torch.utils.data import ConcatDataset
 from data.manipulate import permutate_image_pixels, SubDataset, TransformedDataset
-from data.available import AVAILABLE_DATASETS, AVAILABLE_TRANSFORMS, DATASET_CONFIGS
+from data.available import AVAILABLE_DATASETS, AVAILABLE_TRANSFORMS, DATASET_CONFIGS, networkDataset
+
+from sklearn.model_selection import StratifiedKFold
 
 
 def get_dataset(name, type='train', download=True, capacity=None, permutation=None, dir='./store/datasets',
-                verbose=False, augment=False, normalize=False, target_transform=None):
+                verbose=False, augment=False, normalize=False, target_transform=None, all=False, none=False):
     '''Create [train|valid|test]-dataset.'''
 
     data_name = 'MNIST' if name in ('MNIST28', 'MNIST32') else name
@@ -24,7 +26,7 @@ def get_dataset(name, type='train', download=True, capacity=None, permutation=No
 
     # load data-set
     dataset = dataset_class('{dir}/{name}'.format(dir=dir, name=data_name), train=False if type=='test' else True,
-                            download=download, transform=dataset_transform, target_transform=target_transform)
+                            download=download, transform=dataset_transform, target_transform=target_transform, all=all, none=none)
 
     # print information about dataset on the screen
     if verbose:
@@ -86,7 +88,8 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
     if config['normalize']:
         config['denormalize'] = AVAILABLE_TRANSFORMS["CIFAR100_denorm"]
     # check for number of contexts
-    if contexts > config['classes'] and not name=="permMNIST":
+    # if contexts > config['classes'] and not name=="permMNIST":
+    if False and contexts > config['classes'] and not name=="permMNIST":
     #if contexts > config['classes'] and not name=="permMNIST" and not scenario == 'domain':
         raise ValueError("Experiment '{}' cannot have more than {} contexts!".format(name, config['classes']))
     # -how many classes per context?
@@ -130,42 +133,85 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
         perm_class_list = np.array(list(range(classes))) if exception else np.random.permutation(list(range(classes)))
         target_transform = transforms.Lambda(lambda y, p=perm_class_list: int(p[y]))
         # prepare train and test datasets with all classes
-        trainset = get_dataset(data_type, type="train", dir=data_dir, target_transform=target_transform,
-                               verbose=verbose, augment=augment, normalize=normalize)
-        testset = get_dataset(data_type, type="test", dir=data_dir, target_transform=target_transform, verbose=verbose,
-                              augment=augment, normalize=normalize)
+        # trainset = get_dataset(data_type, type="train", dir=data_dir, target_transform=target_transform,
+        #                        verbose=verbose, augment=augment, normalize=normalize)
+        # testset = get_dataset(data_type, type="test", dir=data_dir, target_transform=target_transform, verbose=verbose,
+        #                       augment=augment, normalize=normalize)
         # generate labels-per-dataset (if requested, training data is split up per class rather than per context)
         labels_per_dataset_train = [[label] for label in range(classes)] if train_set_per_class else [
             list(np.array(range(classes_per_context))+classes_per_context*context_id) for context_id in range(contexts)
         ]
-        #labels_per_dataset_train = [[7,1], [2,3], [4,5], [6,0]]
         labels_per_dataset_test = [
             list(np.array(range(classes_per_context))+classes_per_context*context_id) for context_id in range(contexts)
         ]
-        #labels_per_dataset_test = [[7,1], [2,3], [4,5], [6,0]]
         # split the train and test datasets up into sub-datasets
-        train_datasets = []
-        i = 0
-        print('\ntraining contexts:')
-        for labels in labels_per_dataset_train:
-            target_transform = transforms.Lambda(lambda y, x=labels[0]: y-x) if (
-                    scenario=='domain' or (scenario=='task' and singlehead)
-            ) else None
-            subdataset = SubDataset(trainset, labels, target_transform=target_transform)
-            train_datasets.append(subdataset)
-            print(f'context {i}: {labels}, number of samples = {len(subdataset)}')
-            i += 1
-        i = 0
-        test_datasets = []
-        print('\ntest contexts:')
-        for labels in labels_per_dataset_test:
-            target_transform = transforms.Lambda(lambda y, x=labels[0]: y-x) if (
-                    scenario=='domain' or (scenario=='task' and singlehead)
-            ) else None
-            subdataset = SubDataset(testset, labels, target_transform=target_transform)
-            test_datasets.append(subdataset)
-            print(f'context {i}: {labels}, number of samples = {len(subdataset)}')
-            i += 1
+
+        # train_datasets = []
+        # i = 0
+        # print('\ntraining contexts:')
+        # for labels in labels_per_dataset_train:
+        #     target_transform = transforms.Lambda(lambda y, x=labels[0]: y-x) if (
+        #             scenario=='domain' or (scenario=='task' and singlehead)
+        #     ) else None
+        #     subdataset = SubDataset(trainset, labels, target_transform=target_transform)
+        #     train_datasets.append(subdataset)
+        #     print(f'context {i}: {labels}, number of samples = {len(subdataset)}')
+        #     i += 1
+        # i = 0
+        # test_datasets = []
+        # print('\ntest contexts:')
+        # for labels in labels_per_dataset_test:
+        #     target_transform = transforms.Lambda(lambda y, x=labels[0]: y-x) if (
+        #             scenario=='domain' or (scenario=='task' and singlehead)
+        #     ) else None
+        #     subdataset = SubDataset(testset, labels, target_transform=target_transform)
+        #     test_datasets.append(subdataset)
+        #     print(f'context {i}: {labels}, number of samples = {len(subdataset)}')
+        #     i += 1
+        
+        train_datasets, test_datasets = [], []
+        dataset = get_dataset(data_type, dir=data_dir, target_transform=target_transform,
+                                verbose=verbose, augment=augment, normalize=normalize, all=True)
+        X, Y = dataset.data, dataset.targets
+        skf = StratifiedKFold(n_splits=contexts, shuffle=True)
+        for i, (train_idx, test_idx) in enumerate(skf.split(X, Y)):
+            x_train, y_train = X[train_idx], Y[train_idx]
+            x_test, y_test = X[test_idx], Y[test_idx]
+
+           #if i == 0:
+           #    classes = range(6)
+           #elif i == 1:
+           #    classes = [0,1,5,6]
+           #elif i == 2:
+           #    classes = [0,1,5,6]
+           #elif i == 3:
+           #    classes = [0,1,5,6]
+           #elif i == 4:
+           #    classes = [0,2,3]
+           #elif i == 5:
+           #    classes = [0,1,4]
+           #elif i == 6:
+           #    classes = [0,1,7]
+           #elif i == 7:
+           #    classes = [0, 2, 3, 4, 5, 7, 6]
+            
+            print(f'context {i}: ')
+
+            trainset = get_dataset(data_type, dir=data_dir, verbose=False, none=True)
+            trainset.data = x_train
+            trainset.targets = y_train
+            train_datasets.append(SubDataset(trainset, classes, verbose=verbose))
+
+            testset = get_dataset(data_type, dir=data_dir, verbose=False, none=True)
+            testset.data = x_test
+            testset.targets = y_test
+            test_datasets.append(SubDataset(testset, classes))
+            
+            #uniques, counts = np.unique(y_train, return_counts=True)
+            #percentages = dict(zip(uniques, counts * 100 / len(y_train)))
+            #print(f'context {i}: len(train) = {len(x_train)}, len(test) = {len(x_test)}')
+            #print(percentages)
 
     # Return tuple of train- and test-dataset, config-dictionary and number of classes per context
     return ((train_datasets, test_datasets), config)
+

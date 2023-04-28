@@ -13,7 +13,7 @@ NUM_COLUMNS = 81
 IMAGE_EDGE_SIZE = int(math.sqrt(NUM_COLUMNS))
 NUM_CLASSES = 8
 
-def clean_dataset(df: pd.DataFrame):
+def clean_dataset(df: pd.DataFrame, verbose=False):
     # drop uneeded columns
     to_drop = []
     #columns_to_keep = [LABEL_COLUMN, "tcp", "AckDat", "sHops", "Seq", "RST", "TcpRtt", "REQ", "dMeanPktSz", "Offset", "CON", "FIN", "sTtl", "e", "INT", "Mean", "Status", "icmp", "SrcTCPBase", "e d", "sMeanPktSz", "DstLoss", "Loss", "dTtl", "SrcBytes", "TotBytes"]
@@ -47,7 +47,7 @@ def clean_dataset(df: pd.DataFrame):
     # resample negligeable classes
     #df = resample_class(df, 'ICMPFlood', 0.5)
 
-    print('\nClasses percentage after reducing and oversampling dataset:', df[LABEL_COLUMN].value_counts(normalize=True))
+    verbose and print('\nClasses percentage after reducing and oversampling dataset:', df[LABEL_COLUMN].value_counts(normalize=True))
 
     #  standard normalization
 
@@ -101,7 +101,7 @@ class networkDataset(Dataset):
     def train_data(self):
         return self.data
 
-    def __init__(self, src_file, train=True, transform=None, target_transform=None, download=False, transforms=None):
+    def __init__(self, src_file, train=True, none=False, all=False, verbose=False, transform=None, target_transform=None, download=False, transforms=None):
         has_transforms = transforms is not None
         has_separate_transform = transform is not None or target_transform is not None
         if has_transforms and has_separate_transform:
@@ -114,15 +114,24 @@ class networkDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
 
+        if none:
+            self.data, self.targets = None, None
+            return
+
         df = pd.read_csv(src_file)
         clean_dataset(df)
         le = LabelEncoder()
         df[LABEL_COLUMN] = le.fit_transform(df[LABEL_COLUMN])
-        print("\nLabelEncoder mappings:")
-        for i, class_label in enumerate(le.classes_):
-            print("{0} --> {1}".format(class_label, i))
+        if verbose:
+            print("\nLabelEncoder mappings:")
+            for i, class_label in enumerate(le.classes_):
+                print("{0} --> {1}".format(class_label, i))
         x_data, y_data = split_dataset(df)
 
+        if all:
+            self.data, self.targets = x_data, y_data
+            return
+        
         x_train, x_test, y_train, y_test = train_test_split(x_data, y_data)
 
         if train:
