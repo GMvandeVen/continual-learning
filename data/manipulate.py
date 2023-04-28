@@ -50,12 +50,12 @@ class SubDataset(Dataset):
                 self.sub_indeces.append(index)
         self.target_transform = target_transform
 
-        verbose and print(counts) 
+        verbose and print(f'\tcounts: {counts}') 
         percentages = {}
         for label in counts:
             if counts[label] != 0:
-                percentages[label] = counts[label] / len(self.sub_indeces)
-        verbose and print(percentages)
+                percentages[label] = round(counts[label] / len(self.sub_indeces), 4)
+        verbose and print(f'\tpercentages: {percentages}')
 
     def __len__(self):
         return len(self.sub_indeces)

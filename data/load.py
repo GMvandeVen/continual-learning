@@ -194,18 +194,19 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
            #    classes = [0,1,7]
            #elif i == 7:
            #    classes = [0, 2, 3, 4, 5, 7, 6]
-            
+            # same distributions among contxts
+            included_classes = range(classes)
             print(f'context {i}: ')
 
             trainset = get_dataset(data_type, dir=data_dir, verbose=False, none=True)
             trainset.data = x_train
             trainset.targets = y_train
-            train_datasets.append(SubDataset(trainset, classes, verbose=verbose))
+            train_datasets.append(SubDataset(trainset, included_classes, verbose=verbose))
 
             testset = get_dataset(data_type, dir=data_dir, verbose=False, none=True)
             testset.data = x_test
             testset.targets = y_test
-            test_datasets.append(SubDataset(testset, classes))
+            test_datasets.append(SubDataset(testset, included_classes))
             
             #uniques, counts = np.unique(y_train, return_counts=True)
             #percentages = dict(zip(uniques, counts * 100 / len(y_train)))
