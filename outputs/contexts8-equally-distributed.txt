@@ -1,0 +1,138 @@
+ ***************************** LOAD DATA ******************************
+
+LabelEncoder mappings:
+Benign --> 0
+HTTPFlood --> 1
+ICMPFlood --> 2
+SYNFlood --> 3
+SYNScan --> 4
+SlowrateDoS --> 5
+TCPConnectScan --> 6
+UDPFlood --> 7
+ --> 5GNIDD: 'train'-dataset consisting of 600452 samples
+
+
+context 0: 
+	counts: {0: 208907, 1: 70230, 2: 1010, 3: 8506, 4: 17537, 5: 41590, 6: 17546, 7: 160069}
+	percentages: {0: 0.3976, 1: 0.1337, 2: 0.0019, 3: 0.0162, 4: 0.0334, 5: 0.0792, 6: 0.0334, 7: 0.3047}
+
+
+context 1: 
+	counts: {0: 208908, 1: 70231, 2: 1010, 3: 8505, 4: 17537, 5: 41589, 6: 17546, 7: 160069}
+	percentages: {0: 0.3976, 1: 0.1337, 2: 0.0019, 3: 0.0162, 4: 0.0334, 5: 0.0792, 6: 0.0334, 7: 0.3047}
+
+
+context 2: 
+	counts: {0: 208907, 1: 70230, 2: 1011, 3: 8506, 4: 17537, 5: 41589, 6: 17546, 7: 160069}
+	percentages: {0: 0.3976, 1: 0.1337, 2: 0.0019, 3: 0.0162, 4: 0.0334, 5: 0.0792, 6: 0.0334, 7: 0.3047}
+
+
+context 3: 
+	counts: {0: 208907, 1: 70230, 2: 1011, 3: 8506, 4: 17538, 5: 41589, 6: 17545, 7: 160069}
+	percentages: {0: 0.3976, 1: 0.1337, 2: 0.0019, 3: 0.0162, 4: 0.0334, 5: 0.0792, 6: 0.0334, 7: 0.3047}
+
+
+context 4: 
+	counts: {0: 208907, 1: 70230, 2: 1011, 3: 8506, 4: 17538, 5: 41590, 6: 17545, 7: 160069}
+	percentages: {0: 0.3976, 1: 0.1337, 2: 0.0019, 3: 0.0162, 4: 0.0334, 5: 0.0792, 6: 0.0334, 7: 0.3047}
+
+
+context 5: 
+	counts: {0: 208907, 1: 70230, 2: 1011, 3: 8506, 4: 17538, 5: 41590, 6: 17545, 7: 160069}
+	percentages: {0: 0.3976, 1: 0.1337, 2: 0.0019, 3: 0.0162, 4: 0.0334, 5: 0.0792, 6: 0.0334, 7: 0.3047}
+
+
+context 6: 
+	counts: {0: 208907, 1: 70230, 2: 1011, 3: 8506, 4: 17538, 5: 41590, 6: 17545, 7: 160069}
+	percentages: {0: 0.3976, 1: 0.1337, 2: 0.0019, 3: 0.0162, 4: 0.0334, 5: 0.0792, 6: 0.0334, 7: 0.3047}
+
+
+context 7: 
+	counts: {0: 208907, 1: 70230, 2: 1010, 3: 8506, 4: 17538, 5: 41590, 6: 17546, 7: 160069}
+	percentages: {0: 0.3976, 1: 0.1337, 2: 0.0019, 3: 0.0162, 4: 0.0334, 5: 0.0792, 6: 0.0334, 7: 0.3047}
+
+
+ *********************** DEFINE THE CLASSIFIER ************************
+-------------------------------------------------------
+Classifier(
+  (convE): ConvLayers(
+    (pooling): Identity()
+  )
+  (flatten): Flatten()
+  (fcE): MLP(
+    (fcLayer1): fc_layer(
+      (linear): LinearExcitability(in_features=81, out_features=300)
+      (nl): ReLU()
+    )
+    (fcLayer2): fc_layer(
+      (linear): LinearExcitability(in_features=300, out_features=300)
+      (nl): ReLU()
+    )
+    (fcLayer3): fc_layer(
+      (linear): LinearExcitability(in_features=300, out_features=300)
+      (nl): ReLU()
+    )
+  )
+  (classifier): fc_layer(
+    (linear): LinearExcitability(in_features=300, out_features=8)
+  )
+)
+-------------------------------------------------------
+--> this network has 207608 parameters (~0.2 million)
+       of which: - learnable: 207608 (~0.2 million)
+                 - fixed: 0 (~0.0 million)
+
+
+************************** PARAMETER STAMP ***************************
+ --> problem:       5GNIDD8-class
+ --> model:         F-81x300x300x300_c8
+ --> train-params:  i2000-lr0.0001-b256-adam-all
+ --> replay:        buffer
+ --> memory buffer: b100random
+5GNIDD8-class--F-81x300x300x300_c8--i2000-lr0.0001-b256-adam-all--buffer--b100random
+
+
+****************************** TRAINING ******************************
+<CLASSIFIER> | Context: 1/8 | training loss: 0.494 | training accuracy: 0.801 |: 100% 2000/2000 [01:03<00:00, 31.39it/s]
+<CLASSIFIER> | Context: 2/8 | training loss: 0.178 | training accuracy: 0.84 |: 100% 2000/2000 [01:04<00:00, 31.09it/s]
+<CLASSIFIER> | Context: 3/8 | training loss: 0.16 | training accuracy: 0.836 |: 100% 2000/2000 [01:06<00:00, 30.11it/s]
+<CLASSIFIER> | Context: 4/8 | training loss: 0.117 | training accuracy: 0.863 |: 100% 2000/2000 [01:06<00:00, 30.22it/s]
+<CLASSIFIER> | Context: 5/8 | training loss: 0.0864 | training accuracy: 0.883 |: 100% 2000/2000 [01:05<00:00, 30.39it/s]
+<CLASSIFIER> | Context: 6/8 | training loss: 0.102 | training accuracy: 0.82 |: 100% 2000/2000 [01:05<00:00, 30.66it/s]
+<CLASSIFIER> | Context: 7/8 | training loss: 0.103 | training accuracy: 0.836 |: 100% 2000/2000 [01:04<00:00, 30.91it/s]
+<CLASSIFIER> | Context: 8/8 | training loss: 0.138 | training accuracy: 0.828 |: 100% 2000/2000 [01:05<00:00, 30.70it/s]
+ --> saved model mM-5GNIDD8-class--F-81x300x300x300_c8--i2000-lr0.0001-b256-adam-all--buffer--b100random to ./store/models
+
+
+***************************** EVALUATION *****************************
+
+ Accuracy of final model on test-set:
+ - Context 1: 0.8539
+ - Context 2: 0.8529
+ - Context 3: 0.8544
+ - Context 4: 0.8535
+ - Context 5: 0.8512
+ - Context 6: 0.8523
+ - Context 7: 0.8514
+ - Context 8: 0.8518
+
+
+############################################################
+SUMMARY RESULTS: 
+############################################################
+
+=> average accuracy over all 8 contexts: 0.8527
+
+Per class perfomance:
++----------+------+------+-----+------+------+------+------+------+
+|    -1    |  0   |  1   |  2  |  3   |  4   |  5   |  6   |  7   |
++----------+------+------+-----+------+------+------+------+------+
+| accuracy | 0.39 | 0.11 | 0.0 | 0.01 | 0.03 | 0.07 | 0.03 | 0.21 |
++----------+------+------+-----+------+------+------+------+------+
+
+Average perfomance:
++-----------+--------+----------+----------+
+| precision | recall | accuracy | f1-score |
++-----------+--------+----------+----------+
+|    0.98   |  0.99  |   0.85   |   0.98   |
++-----------+--------+----------+----------+
