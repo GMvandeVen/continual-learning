@@ -476,8 +476,8 @@ def run(args, verbose=False):
 
     # per class performance
     per_class_performance = {
-        'precision': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
-        'recall': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
+        #'precision': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
+        #'recall': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
         #'f1-score': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
         'accuracy': confusion_matrix.diagonal()/confusion_matrix.sum(),
     }
@@ -500,9 +500,15 @@ def run(args, verbose=False):
         'recall': {},
         #'f1-score': {},
     }
-    for metric in average_performance:
-        average_performance[metric] = sum(per_class_performance[metric]) / NUM_CLASSES
+    # for metric in average_performance:
+    #     average_performance[metric] = sum(per_class_performance[metric]) / NUM_CLASSES
     average_performance['accuracy'] = confusion_matrix.diagonal().sum()/confusion_matrix.sum()
+    tp_attacks = confusion_matrix[1:, 1:].sum()
+    fp_attacks = confusion_matrix[0, 1:].sum()
+    fn_attacks = confusion_matrix[1:, 0].sum()
+    prec = average_performance['precision'] = tp_attacks / (tp_attacks + fp_attacks) 
+    rec = average_performance['recall'] = tp_attacks / (tp_attacks + fn_attacks)
+    average_performance['f1-score'] = 2*prec*rec / (prec + rec)
 
     # print results to screen
     print("\n\n"+"#"*60+"\nSUMMARY RESULTS: \n"+"#"*60)
