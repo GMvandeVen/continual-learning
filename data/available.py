@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 import math
 
 LABEL_COLUMN = 'Attack Type'
-NUM_COLUMNS = 81
+NUM_COLUMNS = 36
 IMAGE_EDGE_SIZE = int(math.sqrt(NUM_COLUMNS))
 NUM_CLASSES = 8
 
@@ -38,10 +38,10 @@ def clean_dataset(df: pd.DataFrame, verbose=False):
     #print('number of distinct value in class column after deleting rows with na values', len(df[LABEL_COLUMN].unique()))
 
     # reduce the classes percentage
-    reduce_class(df, LABEL_COLUMN, 'Benign', 0)
-    reduce_class(df, LABEL_COLUMN, 'UDPFlood', 0)
-    reduce_class(df, LABEL_COLUMN, 'HTTPFlood', 0) #0.33)
-    reduce_class(df, LABEL_COLUMN, 'SlowrateDoS', 0) #0.15)
+    reduce_class(df, LABEL_COLUMN, 'Benign', 0.5)
+    reduce_class(df, LABEL_COLUMN, 'UDPFlood', 0.6)
+    reduce_class(df, LABEL_COLUMN, 'HTTPFlood', 0.43) #0.33)
+    reduce_class(df, LABEL_COLUMN, 'SlowrateDoS', 0.35) #0.15)
     if NUM_CLASSES == 8: reduce_class(df, LABEL_COLUMN, 'UDPScan', 1)
 
     # resample negligeable classes
@@ -57,7 +57,8 @@ def clean_dataset(df: pd.DataFrame, verbose=False):
         vals = df[col].unique()
         if len(vals) in [1,2]:
             d[col] = bool
-    df = df.astype(d)
+            df.drop(columns=[col], inplace=True)
+    #df = df.astype(d)
     #print('len', len(df.select_dtypes(exclude=['number']).columns))
     #print('set', set(df.dtypes))
     # normalize float and int columns
@@ -73,6 +74,9 @@ def clean_dataset(df: pd.DataFrame, verbose=False):
             d[col] = int
     df = df.astype(d)
     #print('number of distinct value in class column after cleaning', len(df[LABEL_COLUMN].unique()))
+    for i in range(36 - 33):
+        df[f'nan{i}'] = 0
+    print(f'number of columns {len(df.columns)}')
 
 def resample_class(df, class_val, p):
     minority_class = df[df[LABEL_COLUMN] == class_val].copy()
