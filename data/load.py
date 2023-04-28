@@ -26,7 +26,7 @@ def get_dataset(name, type='train', download=True, capacity=None, permutation=No
 
     # load data-set
     dataset = dataset_class('{dir}/{name}'.format(dir=dir, name=data_name), train=False if type=='test' else True,
-                            download=download, transform=dataset_transform, target_transform=target_transform, all=all, none=none)
+                            download=download, transform=dataset_transform, target_transform=target_transform, all=all, none=none, verbose=verbose)
 
     # print information about dataset on the screen
     if verbose:
@@ -171,7 +171,7 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
         
         train_datasets, test_datasets = [], []
         dataset = get_dataset(data_type, dir=data_dir, target_transform=target_transform,
-                                verbose=verbose, augment=augment, normalize=normalize, all=True)
+                                verbose=True, augment=augment, normalize=normalize, all=True)
         X, Y = dataset.data, dataset.targets
         skf = StratifiedKFold(n_splits=contexts, shuffle=True)
         for i, (train_idx, test_idx) in enumerate(skf.split(X, Y)):
@@ -196,7 +196,7 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
            #    classes = [0, 2, 3, 4, 5, 7, 6]
             # same distributions among contxts
             included_classes = range(classes)
-            print(f'context {i}: ')
+            print(f'\n\ncontext {i}: ')
 
             trainset = get_dataset(data_type, dir=data_dir, verbose=False, none=True)
             trainset.data = x_train
