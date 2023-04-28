@@ -38,10 +38,10 @@ def clean_dataset(df: pd.DataFrame, verbose=False):
     #print('number of distinct value in class column after deleting rows with na values', len(df[LABEL_COLUMN].unique()))
 
     # reduce the classes percentage
-    reduce_class(df, LABEL_COLUMN, 'Benign', 0.5)
-    reduce_class(df, LABEL_COLUMN, 'UDPFlood', 0.6)
-    reduce_class(df, LABEL_COLUMN, 'HTTPFlood', 0.43) #0.33)
-    reduce_class(df, LABEL_COLUMN, 'SlowrateDoS', 0.35) #0.15)
+    reduce_class(df, LABEL_COLUMN, 'Benign', 0)
+    reduce_class(df, LABEL_COLUMN, 'UDPFlood', 0)
+    reduce_class(df, LABEL_COLUMN, 'HTTPFlood', 0) #0.33)
+    reduce_class(df, LABEL_COLUMN, 'SlowrateDoS', 0) #0.15)
     if NUM_CLASSES == 8: reduce_class(df, LABEL_COLUMN, 'UDPScan', 1)
 
     # resample negligeable classes

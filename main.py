@@ -481,18 +481,12 @@ def run(args, verbose=False):
         #'f1-score': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
         'accuracy': confusion_matrix.diagonal()/confusion_matrix.sum(),
     }
-    #for i in range(NUM_CLASSES):
-        #tp = confusion_matrix[i][i]
-    # precision = per_class_performance['recall'] = round( tp/ np.sum(confusion_matrix[i]), 2)
-    # recall = per_class_performance['precision'][i] = round(tp / np.sum(confusion_matrix[:, i], axis=0), 2)
-    # acc = per_class_performance['accuracy'][i] = round(tp / np.sum(confusion_matrix), 2)
-    # f1 = per_class_performance['f1-score'][i] = round(2 * (precision * recall) / (precision + recall), 2)
     if False and verbose:
         print(f'confusion_matrix[{i}] = {confusion_matrix[i]}')
         print(f'confusion_matrix.col[{i}] = {[row[i] for row in confusion_matrix]}')
         print(f'tp = {tp}')
-        #print(f'recall = {recall}, precision = {precision}')
-        #print(f'=> class {i}: \n\tprecision: {precision:.3f} \n\trecall: {recall:.3f} \n\tacc: {acc:.3f} \n\tf1-score: {f1:3f}' )
+        print(f'recall = {recall}, precision = {precision}')
+        print(f'=> class {i}: \n\tprecision: {precision:.3f} \n\trecall: {recall:.3f} \n\tacc: {acc:.3f} \n\tf1-score: {f1:3f}' )
 
     # average performance
     average_performance = {
@@ -502,10 +496,10 @@ def run(args, verbose=False):
     }
     # for metric in average_performance:
     #     average_performance[metric] = sum(per_class_performance[metric]) / NUM_CLASSES
-    average_performance['accuracy'] = confusion_matrix.diagonal().sum()/confusion_matrix.sum()
     tp_attacks = confusion_matrix[1:, 1:].sum()
     fp_attacks = confusion_matrix[0, 1:].sum()
     fn_attacks = confusion_matrix[1:, 0].sum()
+    average_performance['accuracy'] = confusion_matrix.diagonal().sum()/confusion_matrix.sum()
     prec = average_performance['precision'] = tp_attacks / (tp_attacks + fp_attacks) 
     rec = average_performance['recall'] = tp_attacks / (tp_attacks + fn_attacks)
     average_performance['f1-score'] = 2*prec*rec / (prec + rec)
