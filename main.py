@@ -479,7 +479,7 @@ def run(args, verbose=False):
         #'precision': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
         #'recall': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
         #'f1-score': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
-        'accuracy': confusion_matrix.diagonal()/confusion_matrix.sum(),
+        'accuracy': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
     }
     if False and verbose:
         print(f'confusion_matrix[{i}] = {confusion_matrix[i]}')
