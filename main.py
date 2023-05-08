@@ -507,12 +507,12 @@ def run(args, verbose=False):
     if verbose:
         print("\n\n"+"#"*60+"\nConfusion Matrix: \n"+"#"*60)
         tbl = PrettyTable()
-        tbl.field_names = [''] + list(range(NUM_CLASSES))
+        tbl.field_names = [''] + [f"Predicted {i}" for i in range(NUM_CLASSES)]
         for i in range(NUM_CLASSES):
-            tbl.add_row([i] + [int(confusion_matrix[i][j]) for j in range(NUM_CLASSES)])
+            tbl.add_row([f"Labeled {i}"] + [int(confusion_matrix[i][j]) for j in range(NUM_CLASSES)])
         print(tbl)
         print("\n\n"+"#"*60+"\nSUMMARY RESULTS: \n"+"#"*60)
-        print('\n=> average accuracy over all {} contexts: {:.4f}'.format(args.contexts, average_accs))
+        print('\naverage accuracy over all {} contexts: {:.4f}'.format(args.contexts, average_accs))
         print("\nPer class perfomance:")
         tbl = PrettyTable()
         tbl.field_names = range(-1, NUM_CLASSES)
