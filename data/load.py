@@ -178,6 +178,7 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
             x_train, y_train = X[train_idx], Y[train_idx]
             x_test, y_test = X[test_idx], Y[test_idx]
 
+            # add one class per context
             if i == 0:
                 included_classes = [0]
             elif i == 1:
@@ -194,8 +195,27 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
                 included_classes = [0,1,2,3,4,5,6]
             elif i == 7:
                 included_classes = [0,1,2,3,4,5,6,7]
+
+            # add classes incrementally in a random manner
+            # if i == 0:
+            #     included_classes = [0, 1, 2, 3]
+            # elif i == 1:
+            #     included_classes = [0,1]
+            # elif i == 2:
+            #     included_classes = [0]
+            # elif i == 3:
+            #     included_classes = [0,2,3]
+            # elif i == 4:
+            #     included_classes = [0,1,2,3,4]
+            # elif i == 5:
+            #     included_classes = [0,3,5]
+            # elif i == 6:
+            #     included_classes = [0,2,6]
+            # elif i == 7:
+            #     included_classes = [0,2,3,7]
+
             # same distributions among contxts
-            #included_classes = range(classes)
+            # included_classes = range(classes)
             print(f'\n\ncontext {i}: ')
 
             trainset = get_dataset(data_type, dir=data_dir, verbose=False, none=True)

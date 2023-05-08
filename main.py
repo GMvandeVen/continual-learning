@@ -476,17 +476,15 @@ def run(args, verbose=False):
 
     # per class performance
     per_class_performance = {
-        #'precision': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
-        #'recall': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
-        #'f1-score': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
-        'accuracy': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
+        'precision': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
+        'recall': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
     }
-    if False and verbose:
-        print(f'confusion_matrix[{i}] = {confusion_matrix[i]}')
-        print(f'confusion_matrix.col[{i}] = {[row[i] for row in confusion_matrix]}')
-        print(f'tp = {tp}')
-        print(f'recall = {recall}, precision = {precision}')
-        print(f'=> class {i}: \n\tprecision: {precision:.3f} \n\trecall: {recall:.3f} \n\tacc: {acc:.3f} \n\tf1-score: {f1:3f}' )
+    # if True and verbose:
+        # print(f'confusion_matrix.rows.sum = {confusion_matrix.sum(axis=1)}')
+        # print(f'confusion_matrix.cols.sum = {confusion_matrix.sum(axis=0)}')
+        # print(f'tp = {tp}')
+        # print(f'recall = {recall}, precision = {precision}')
+        # print(f'=> class {i}: \n\tprecision: {precision:.3f} \n\trecall: {recall:.3f} \n\tacc: {acc:.3f} \n\tf1-score: {f1:3f}' )
 
     # average performance
     average_performance = {
@@ -505,19 +503,31 @@ def run(args, verbose=False):
     average_performance['f1-score'] = 2*prec*rec / (prec + rec)
 
     # print results to screen
-    print("\n\n"+"#"*60+"\nSUMMARY RESULTS: \n"+"#"*60)
     if verbose:
+        print("\n\n"+"#"*60+"\nConfusion Matrix: \n"+"#"*60)
+        tbl = PrettyTable()
+        tbl.field_names = [''] + list(range(NUM_CLASSES))
+        for i in range(NUM_CLASSES):
+            tbl.add_row([i] + [int(confusion_matrix[i][j]) for j in range(NUM_CLASSES)])
+        print(tbl)
+        print("\n\n"+"#"*60+"\nSUMMARY RESULTS: \n"+"#"*60)
         print('\n=> average accuracy over all {} contexts: {:.4f}'.format(args.contexts, average_accs))
         print("\nPer class perfomance:")
         tbl = PrettyTable()
         tbl.field_names = range(-1, NUM_CLASSES)
         for metric in per_class_performance.keys():
-            tbl.add_row([metric] + [round(per_class_performance[metric][i], 2) for i in range(NUM_CLASSES)])
+            tbl.add_row([metric] + [round(per_class_performance[metric][i], 4) for i in range(NUM_CLASSES)])
+        print(tbl)
+        print("\nBrief Confusion Matrix (Binary): ")
+        tbl = PrettyTable()
+        tbl.field_names = ['', 'Predcited Benign', 'Predicted Malicious']
+        tbl.add_row(['Labeled Benign'] + [confusion_matrix[0,0].sum(), fp_attacks])
+        tbl.add_row(['Labeled Malicious'] + [fn_attacks, tp_attacks])
         print(tbl)
         print("\nAverage perfomance:")
         tbl = PrettyTable()
         tbl.field_names = average_performance.keys()
-        tbl.add_row([round(average_performance[metric], 2) for metric in tbl.field_names])
+        tbl.add_row([round(average_performance[metric], 4) for metric in tbl.field_names])
         print(tbl)
 
     # -write out to text file
