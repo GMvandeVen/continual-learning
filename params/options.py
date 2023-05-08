@@ -346,3 +346,12 @@ def add_cl_options(parser, main=False, compare_all=False, compare_replay=False, 
     return parser
 
 ##-------------------------------------------------------------------------------------------------------------------##
+
+def add_federated_learning_options(parser, **kwargs):
+    fl_params = parser.add_argument_group('Federated Learning')
+    fl_params.add_argument("--fed-avg", action="store_true", help="use FedAvg algorithm for Federated Learning")
+    fl_params.add_argument('--client-num', type=int, help='number of federated clients')
+    fl_params.add_argument('--client-batch-size', type=int, help='batch size for a federated client')
+    return parser
+
+##-------------------------------------------------------------------------------------------------------------------##
