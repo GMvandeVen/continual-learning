@@ -5,8 +5,8 @@ from torch.utils.data import ConcatDataset
 from data.manipulate import permutate_image_pixels, SubDataset, TransformedDataset
 from data.available import AVAILABLE_DATASETS, AVAILABLE_TRANSFORMS, DATASET_CONFIGS, networkDataset
 
-from sklearn.model_selection import StratifiedKFold
-
+from sklearn.model_selection import StratifiedKFold, KFold
+from sklearn.model_selection import train_test_split
 
 def get_dataset(name, type='train', download=True, capacity=None, permutation=None, dir='./store/datasets',
                 verbose=False, augment=False, normalize=False, target_transform=None, all=False, none=False):
@@ -170,15 +170,23 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
         #     print(f'context {i}: {labels}, number of samples = {len(subdataset)}')
         #     i += 1
         
+        print(f"\nScenario: {structure}")
         train_datasets, test_datasets = [], []
         dataset = get_dataset(data_type, dir=data_dir, target_transform=target_transform,
                                 verbose=True, augment=augment, normalize=normalize, all=True)
         X, Y = dataset.data, dataset.targets
-        skf = StratifiedKFold(n_splits=contexts, shuffle=True)
-        print(f"\nScenario: {structure}")
-        for i, (train_idx, test_idx) in enumerate(skf.split(X, Y)):
-            x_train, y_train = X[train_idx], Y[train_idx]
-            x_test, y_test = X[test_idx], Y[test_idx]
+        subsets = []
+        for i in range(contexts):
+            for j in range(classes):
+                idx = np.array_split(np.where(Y == j)[0], contexts)[i]
+                if j == 0:
+                    subset = (X[idx], Y[idx])
+                else:
+                    subset = (np.concatenate((subset[0], X[idx]), axis=0), np.concatenate((subset[1], Y[idx]), axis=0))
+            subsets.append(subset)
+                
+        for i in range(contexts):
+            x_train, x_test, y_train, y_test = train_test_split(subsets[i][0], subsets[i][1])
 
             # same distributions among contxts
             if structure == 1:

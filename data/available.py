@@ -13,7 +13,7 @@ NUM_COLUMNS = 81
 IMAGE_EDGE_SIZE = int(math.sqrt(NUM_COLUMNS))
 NUM_CLASSES = 8
 
-def clean_dataset(df: pd.DataFrame, verbose=False):
+def clean_dataset(df: pd.DataFrame, verbose=True):
     # drop uneeded columns
     to_drop = []
     #columns_to_keep = [LABEL_COLUMN, "tcp", "AckDat", "sHops", "Seq", "RST", "TcpRtt", "REQ", "dMeanPktSz", "Offset", "CON", "FIN", "sTtl", "e", "INT", "Mean", "Status", "icmp", "SrcTCPBase", "e d", "sMeanPktSz", "DstLoss", "Loss", "dTtl", "SrcBytes", "TotBytes"]
@@ -47,7 +47,7 @@ def clean_dataset(df: pd.DataFrame, verbose=False):
     # resample negligeable classes
     #df = resample_class(df, 'ICMPFlood', 0.5)
 
-    verbose and print('\nClasses percentage after reducing and oversampling dataset:', df[LABEL_COLUMN].value_counts(normalize=True))
+    verbose and print('\nClasses percentage after reducing and oversampling dataset:', df[LABEL_COLUMN].value_counts(normalize=False))
 
     #  standard normalization
 
