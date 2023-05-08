@@ -58,7 +58,8 @@ def get_singlecontext_datasets(name, data_dir="./store/datasets", normalize=Fals
 #----------------------------------------------------------------------------------------------------------#
 
 def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config=False, verbose=False,
-                    exception=False, normalize=False, augment=False, singlehead=False, train_set_per_class=False):
+                    exception=False, normalize=False, augment=False, singlehead=False, train_set_per_class=False, 
+                    structure=3):
     '''Load, organize and return a context set (both train- and test-data) for the requested experiment.
 
     [exception]:    <bool>; if True, for visualization no permutation is applied to first context (permMNIST) or digits
@@ -174,48 +175,38 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
                                 verbose=True, augment=augment, normalize=normalize, all=True)
         X, Y = dataset.data, dataset.targets
         skf = StratifiedKFold(n_splits=contexts, shuffle=True)
+        print(f"\nScenario: {structure}")
         for i, (train_idx, test_idx) in enumerate(skf.split(X, Y)):
             x_train, y_train = X[train_idx], Y[train_idx]
             x_test, y_test = X[test_idx], Y[test_idx]
 
+            # same distributions among contxts
+            if structure == 1:
+                included_classes = range(classes)
+
             # add one class per context
-            if i == 0:
-                included_classes = [0]
-            elif i == 1:
-                included_classes = [0,1]
-            elif i == 2:
-                included_classes = [0,1,2]
-            elif i == 3:
-                included_classes = [0,1,2,3]
-            elif i == 4:
-                included_classes = [0,1,2,3,4]
-            elif i == 5:
-                included_classes = [0,1,2,3,4,5]
-            elif i == 6:
-                included_classes = [0,1,2,3,4,5,6]
-            elif i == 7:
-                included_classes = [0,1,2,3,4,5,6,7]
+            if structure == 2:
+                included_classes = [j for j in range(i+1)]
 
             # add classes incrementally in a random manner
-            # if i == 0:
-            #     included_classes = [0, 1, 2, 3]
-            # elif i == 1:
-            #     included_classes = [0,1]
-            # elif i == 2:
-            #     included_classes = [0]
-            # elif i == 3:
-            #     included_classes = [0,2,3]
-            # elif i == 4:
-            #     included_classes = [0,1,2,3,4]
-            # elif i == 5:
-            #     included_classes = [0,3,5]
-            # elif i == 6:
-            #     included_classes = [0,2,6]
-            # elif i == 7:
-            #     included_classes = [0,2,3,7]
+            if structure == 3:
+                if i == 0:
+                    included_classes = [0, 1, 2, 3]
+                elif i == 1:
+                    included_classes = [0,1]
+                elif i == 2:
+                    included_classes = [0]
+                elif i == 3:
+                    included_classes = [0,2,3]
+                elif i == 4:
+                    included_classes = [0,1,2,3,4]
+                elif i == 5:
+                    included_classes = [0,3,5]
+                elif i == 6:
+                    included_classes = [0,2,6]
+                elif i == 7:
+                    included_classes = [0,2,3,7]
 
-            # same distributions among contxts
-            # included_classes = range(classes)
             print(f'\n\ncontext {i}: ')
 
             trainset = get_dataset(data_type, dir=data_dir, verbose=False, none=True)

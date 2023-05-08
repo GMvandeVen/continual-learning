@@ -83,7 +83,8 @@ def run(args, verbose=False):
     (train_datasets, test_datasets), config = get_context_set(
         name=args.experiment, scenario=args.scenario, contexts=args.contexts, data_dir=args.d_dir,
         normalize=checkattr(args, "normalize"), verbose=verbose, exception=(args.seed==0),
-        singlehead=checkattr(args, 'singlehead'), train_set_per_class=checkattr(args, 'gen_classifier')
+        singlehead=checkattr(args, 'singlehead'), train_set_per_class=checkattr(args, 'gen_classifier'),
+        structure=args.structure,
     )
     # The experiments in this script follow the academic continual learning setting,
     # the above lines of code therefore load both the 'context set' and the 'data stream'
