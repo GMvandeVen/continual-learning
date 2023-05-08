@@ -11,3 +11,4 @@ jupyterlab
 ipywidgets
 tensorflow
 tensorflow_federated
+prettytable

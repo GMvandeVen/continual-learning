@@ -1,0 +1,140 @@
+
+
+ ***************************** LOAD DATA ******************************
+
+LabelEncoder mappings:
+Benign --> 0
+HTTPFlood --> 1
+ICMPFlood --> 2
+SYNFlood --> 3
+SYNScan --> 4
+SlowrateDoS --> 5
+TCPConnectScan --> 6
+UDPFlood --> 7
+ --> 5GNIDD: 'train'-dataset consisting of 600452 samples
+
+
+context 0: 
+	counts: {0: 208907}
+	percentages: {0: 1.0}
+
+
+context 1: 
+	counts: {0: 208908, 1: 70231}
+	percentages: {0: 0.7484, 1: 0.2516}
+
+
+context 2: 
+	counts: {0: 208907, 1: 70230, 2: 1011}
+	percentages: {0: 0.7457, 1: 0.2507, 2: 0.0036}
+
+
+context 3: 
+	counts: {0: 208907, 1: 70230, 2: 1011, 3: 8506}
+	percentages: {0: 0.7237, 1: 0.2433, 2: 0.0035, 3: 0.0295}
+
+
+context 4: 
+	counts: {0: 208907, 1: 70230, 2: 1011, 3: 8506, 4: 17538}
+	percentages: {0: 0.6823, 1: 0.2294, 2: 0.0033, 3: 0.0278, 4: 0.0573}
+
+
+context 5: 
+	counts: {0: 208907, 1: 70230, 2: 1011, 3: 8506, 4: 17538, 5: 41590}
+	percentages: {0: 0.6007, 1: 0.2019, 2: 0.0029, 3: 0.0245, 4: 0.0504, 5: 0.1196}
+
+
+context 6: 
+	counts: {0: 208907, 1: 70230, 2: 1011, 3: 8506, 4: 17538, 5: 41590, 6: 17545}
+	percentages: {0: 0.5718, 1: 0.1922, 2: 0.0028, 3: 0.0233, 4: 0.048, 5: 0.1138, 6: 0.048}
+
+
+context 7: 
+	counts: {0: 208907, 1: 70230, 2: 1010, 3: 8506, 4: 17538, 5: 41590, 6: 17546, 7: 160069}
+	percentages: {0: 0.3976, 1: 0.1337, 2: 0.0019, 3: 0.0162, 4: 0.0334, 5: 0.0792, 6: 0.0334, 7: 0.3047}
+
+
+ *********************** DEFINE THE CLASSIFIER ************************
+-------------------------------------------------------
+Classifier(
+  (convE): ConvLayers(
+    (pooling): Identity()
+  )
+  (flatten): Flatten()
+  (fcE): MLP(
+    (fcLayer1): fc_layer(
+      (linear): LinearExcitability(in_features=81, out_features=300)
+      (nl): ReLU()
+    )
+    (fcLayer2): fc_layer(
+      (linear): LinearExcitability(in_features=300, out_features=300)
+      (nl): ReLU()
+    )
+    (fcLayer3): fc_layer(
+      (linear): LinearExcitability(in_features=300, out_features=300)
+      (nl): ReLU()
+    )
+  )
+  (classifier): fc_layer(
+    (linear): LinearExcitability(in_features=300, out_features=8)
+  )
+)
+-------------------------------------------------------
+--> this network has 207608 parameters (~0.2 million)
+       of which: - learnable: 207608 (~0.2 million)
+                 - fixed: 0 (~0.0 million)
+
+
+************************** PARAMETER STAMP ***************************
+ --> problem:       5GNIDD8-class
+ --> model:         F-81x300x300x300_c8
+ --> train-params:  i2000-lr0.0001-b256-adam-all
+ --> replay:        buffer
+ --> memory buffer: b100random
+5GNIDD8-class--F-81x300x300x300_c8--i2000-lr0.0001-b256-adam-all--buffer--b100random
+
+
+****************************** TRAINING ******************************
+<CLASSIFIER> | Context: 1/8 | training loss: 8.47e-07 | training accuracy: 1.0 |: 100% 2000/2000 [01:00<00:00, 33.08it/s]
+<CLASSIFIER> | Context: 2/8 | training loss: 0.0025 | training accuracy: 1.0 |: 100% 2000/2000 [01:03<00:00, 31.54it/s]
+<CLASSIFIER> | Context: 3/8 | training loss: 0.000789 | training accuracy: 1.0 |: 100% 2000/2000 [01:04<00:00, 31.06it/s]
+<CLASSIFIER> | Context: 4/8 | training loss: 0.0053 | training accuracy: 0.992 |: 100% 2000/2000 [01:04<00:00, 31.08it/s]
+<CLASSIFIER> | Context: 5/8 | training loss: 0.00818 | training accuracy: 0.992 |: 100% 2000/2000 [01:05<00:00, 30.73it/s]
+<CLASSIFIER> | Context: 6/8 | training loss: 0.0321 | training accuracy: 0.969 |: 100% 2000/2000 [01:05<00:00, 30.64it/s]
+<CLASSIFIER> | Context: 7/8 | training loss: 0.0488 | training accuracy: 0.922 |: 100% 2000/2000 [01:05<00:00, 30.68it/s]
+<CLASSIFIER> | Context: 8/8 | training loss: 0.157 | training accuracy: 0.828 |: 100% 2000/2000 [01:06<00:00, 30.23it/s]
+ --> saved model mM-5GNIDD8-class--F-81x300x300x300_c8--i2000-lr0.0001-b256-adam-all--buffer--b100random to ./store/models
+
+
+***************************** EVALUATION *****************************
+
+ Accuracy of final model on test-set:
+ - Context 1: 0.9617
+ - Context 2: 0.9388
+ - Context 3: 0.9374
+ - Context 4: 0.9333
+ - Context 5: 0.9381
+ - Context 6: 0.9251
+ - Context 7: 0.9212
+ - Context 8: 0.8352
+
+
+############################################################
+SUMMARY RESULTS: 
+############################################################
+
+=> average accuracy over all 8 contexts: 0.9238
+
+Per class perfomance:
++----------+------+------+-----+------+------+------+------+------+
+|    -1    |  0   |  1   |  2  |  3   |  4   |  5   |  6   |  7   |
++----------+------+------+-----+------+------+------+------+------+
+| accuracy | 0.62 | 0.16 | 0.0 | 0.01 | 0.03 | 0.04 | 0.01 | 0.04 |
++----------+------+------+-----+------+------+------+------+------+
+
+Average perfomance:
++-----------+--------+----------+----------+
+| precision | recall | accuracy | f1-score |
++-----------+--------+----------+----------+
+|    0.94   |  0.99  |   0.91   |   0.96   |
++-----------+--------+----------+----------+

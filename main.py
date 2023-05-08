@@ -19,6 +19,9 @@ from params.param_values import set_method_options,check_for_errors,set_default_
 from eval import evaluate, callbacks as cb
 from visual import visual_plt
 
+from prettytable import PrettyTable
+from data.available import NUM_CLASSES
+
 
 ## Function for specifying input-options and organizing / checking them
 def handle_inputs():
@@ -81,7 +84,8 @@ def run(args, verbose=False):
     (train_datasets, test_datasets), config = get_context_set(
         name=args.experiment, scenario=args.scenario, contexts=args.contexts, data_dir=args.d_dir,
         normalize=checkattr(args, "normalize"), verbose=verbose, exception=(args.seed==0),
-        singlehead=checkattr(args, 'singlehead'), train_set_per_class=checkattr(args, 'gen_classifier')
+        singlehead=checkattr(args, 'singlehead'), train_set_per_class=checkattr(args, 'gen_classifier'),
+        structure=args.structure,
     )
     # The experiments in this script follow the academic continual learning setting,
     # the above lines of code therefore load both the 'context set' and the 'data stream'
@@ -456,19 +460,78 @@ def run(args, verbose=False):
     # Evaluate accuracy of final model on full test-set
     if verbose:
         print("\n Accuracy of final model on test-set:")
-    accs = []
+    accs_per_context = []
+    confusion_matrix = np.zeros((NUM_CLASSES, NUM_CLASSES))
     for i in range(args.contexts):
-        acc = evaluate.test_acc(
+        context_acc, confusion_matrix = evaluate.test_acc(
             model, test_datasets[i], verbose=False, test_size=None, context_id=i, allowed_classes=list(
                 range(config['classes_per_context']*i, config['classes_per_context']*(i+1))
             ) if (args.scenario=="task" and not checkattr(args, 'singlehead')) else None,
+            cm=confusion_matrix,
         )
         if verbose:
-            print(" - Context {}: {:.4f}".format(i + 1, acc))
-        accs.append(acc)
-    average_accs = sum(accs) / args.contexts
+            print(" - Context {}: {:.4f}".format(i + 1, context_acc))
+        accs_per_context.append(context_acc)
+
+    # average accuracy among contexts
+    average_accs = sum(accs_per_context) / args.contexts
+
+    # per class performance
+    per_class_performance = {
+        'precision': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
+        'recall': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
+    }
+    # if True and verbose:
+        # print(f'confusion_matrix.rows.sum = {confusion_matrix.sum(axis=1)}')
+        # print(f'confusion_matrix.cols.sum = {confusion_matrix.sum(axis=0)}')
+        # print(f'tp = {tp}')
+        # print(f'recall = {recall}, precision = {precision}')
+        # print(f'=> class {i}: \n\tprecision: {precision:.3f} \n\trecall: {recall:.3f} \n\tacc: {acc:.3f} \n\tf1-score: {f1:3f}' )
+
+    # average performance
+    average_performance = {
+        'precision': {},
+        'recall': {},
+        #'f1-score': {},
+    }
+    # for metric in average_performance:
+    #     average_performance[metric] = sum(per_class_performance[metric]) / NUM_CLASSES
+    tp_attacks = confusion_matrix[1:, 1:].sum()
+    fp_attacks = confusion_matrix[0, 1:].sum()
+    fn_attacks = confusion_matrix[1:, 0].sum()
+    average_performance['accuracy'] = confusion_matrix.diagonal().sum()/confusion_matrix.sum()
+    prec = average_performance['precision'] = tp_attacks / (tp_attacks + fp_attacks) 
+    rec = average_performance['recall'] = tp_attacks / (tp_attacks + fn_attacks)
+    average_performance['f1-score'] = 2*prec*rec / (prec + rec)
+
+    # print results to screen
     if verbose:
-        print('=> average accuracy over all {} contexts: {:.4f}\n\n'.format(args.contexts, average_accs))
+        print("\n\n"+"#"*60+"\nConfusion Matrix: \n"+"#"*60)
+        tbl = PrettyTable()
+        tbl.field_names = [''] + [f"Predicted {i}" for i in range(NUM_CLASSES)]
+        for i in range(NUM_CLASSES):
+            tbl.add_row([f"Labeled {i}"] + [int(confusion_matrix[i][j]) for j in range(NUM_CLASSES)])
+        print(tbl)
+        print("\n\n"+"#"*60+"\nSUMMARY RESULTS: \n"+"#"*60)
+        print('\naverage accuracy over all {} contexts: {:.4f}'.format(args.contexts, average_accs))
+        print("\nPer class perfomance:")
+        tbl = PrettyTable()
+        tbl.field_names = range(-1, NUM_CLASSES)
+        for metric in per_class_performance.keys():
+            tbl.add_row([metric] + [round(per_class_performance[metric][i], 4) for i in range(NUM_CLASSES)])
+        print(tbl)
+        print("\nBrief Confusion Matrix (Binary): ")
+        tbl = PrettyTable()
+        tbl.field_names = ['', 'Predcited Benign', 'Predicted Malicious']
+        tbl.add_row(['Labeled Benign'] + [confusion_matrix[0,0].sum(), fp_attacks])
+        tbl.add_row(['Labeled Malicious'] + [fn_attacks, tp_attacks])
+        print(tbl)
+        print("\nAverage perfomance:")
+        tbl = PrettyTable()
+        tbl.field_names = average_performance.keys()
+        tbl.add_row([round(average_performance[metric], 4) for metric in tbl.field_names])
+        print(tbl)
+
     # -write out to text file
     file_name = "{}/acc-{}{}.txt".format(args.r_dir, param_stamp,
                                          "--S{}".format(args.eval_s) if checkattr(args, 'gen_classifier') else "")

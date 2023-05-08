@@ -6,43 +6,59 @@ from torch.utils.data import Dataset
 import pandas as pd
 from PIL import Image
 from sklearn.model_selection import train_test_split
+import math
 
 LABEL_COLUMN = 'Attack Type'
+NUM_COLUMNS = 81
+IMAGE_EDGE_SIZE = int(math.sqrt(NUM_COLUMNS))
+NUM_CLASSES = 8
 
-def clean_dataset(df: pd.DataFrame):
+def clean_dataset(df: pd.DataFrame, verbose=False):
     # drop uneeded columns
     to_drop = []
-    columns_to_keep = [LABEL_COLUMN, "tcp", "AckDat", "sHops", "Seq", "RST", "TcpRtt", "REQ", "dMeanPktSz", "Offset", "CON", "FIN", "sTtl", "e", "INT", "Mean", "Status", "icmp", "SrcTCPBase", "e d", "sMeanPktSz", "DstLoss", "Loss", "dTtl", "SrcBytes", "TotBytes"]
-    for col in df.columns:
-        if col.strip() not in columns_to_keep or col == ' e        ':
-            #print('dropping', col)
-            to_drop.append(col) 
-    df.drop(columns=to_drop, inplace=True)
-    #df.drop(columns=['Unnamed: 0', 'Attack Tool', 'Label' if not LABEL_COLUMN == 'Label' else 'Attack Type'], inplace=True) # Seq
+    #columns_to_keep = [LABEL_COLUMN, "tcp", "AckDat", "sHops", "Seq", "RST", "TcpRtt", "REQ", "dMeanPktSz", "Offset", "CON", "FIN", "sTtl", "e", "INT", "Mean", "Status", "icmp", "SrcTCPBase", "e d", "sMeanPktSz", "DstLoss", "Loss", "dTtl", "SrcBytes", "TotBytes"]
+    #print('number of distinct value in class column before cleaning', len(df[LABEL_COLUMN].unique()))
+    i = 0
+    # for col in df.columns:
+    #     if col.strip() not in columns_to_keep or col == ' e        ':
+    #         #print('dropping', i, col)
+    #         to_drop.append(col) 
+    #         i += 1
+    # df.drop(columns=to_drop, inplace=True)
+    df.drop(columns=['Unnamed: 0', 'Attack Tool', 'Label' if not LABEL_COLUMN == 'Label' else 'Attack Type'], inplace=True) # Seq
     # drop columns that contain a lot of null values
-    d = {}
     for col in df.columns:
         if df[col].isnull().sum() > (len(df) * 0.7):
-            #df.drop(columns = [col], inplace=True)
-            pass
+            df.drop(columns = [col], inplace=True)
+            # pass
     # drop rows that contain NaN values and duplicates
     df.drop_duplicates(inplace=True)
+    #print('number of distinct value in class column after deleting duplicates', len(df[LABEL_COLUMN].unique()))
     df.dropna(inplace=True)
+    #print('number of distinct value in class column after deleting rows with na values', len(df[LABEL_COLUMN].unique()))
+
     # reduce the classes percentage
     reduce_class(df, LABEL_COLUMN, 'Benign', 0.5)
     reduce_class(df, LABEL_COLUMN, 'UDPFlood', 0.6)
-    reduce_class(df, LABEL_COLUMN, 'HTTPFlood', 0.43)
-    reduce_class(df, LABEL_COLUMN, 'SlowrateDoS', 0.35)
-    reduce_class(df, LABEL_COLUMN, 'ICMPFlood', 1)
+    reduce_class(df, LABEL_COLUMN, 'HTTPFlood', 0.43) #0.33)
+    reduce_class(df, LABEL_COLUMN, 'SlowrateDoS', 0.35) #0.15)
+    if NUM_CLASSES == 8: reduce_class(df, LABEL_COLUMN, 'UDPScan', 1)
+
+    # resample negligeable classes
+    #df = resample_class(df, 'ICMPFlood', 0.5)
+
+    verbose and print('\nClasses percentage after reducing and oversampling dataset:', df[LABEL_COLUMN].value_counts(normalize=True))
 
     #  standard normalization
 
     # change type of True/False columns to bool
+    d = {}
     for col in df.columns:
         vals = df[col].unique()
         if len(vals) in [1,2]:
             d[col] = bool
-            #df.drop(columns = [col], inplace=True)
+            # to try the dataset version where there are only numerical values
+            # df.drop(columns=[col], inplace=True)
     df = df.astype(d)
     #print('len', len(df.select_dtypes(exclude=['number']).columns))
     #print('set', set(df.dtypes))
@@ -58,7 +74,18 @@ def clean_dataset(df: pd.DataFrame):
         if len(vals) in [1,2]:
             d[col] = int
     df = df.astype(d)
-    
+    #print('number of distinct value in class column after cleaning', len(df[LABEL_COLUMN].unique()))
+    # for i in range(36 - 33):
+    #     df[f'nan{i}'] = 3
+    # print(f'number of columns {len(df.columns)}')
+
+def resample_class(df, class_val, p):
+    minority_class = df[df[LABEL_COLUMN] == class_val].copy()
+    duplicated_samples = minority_class.sample(n=int(len(df)*p), replace=True)
+    df.drop(minority_class.index, inplace=True)
+    return  pd.concat([df, duplicated_samples], ignore_index=True)
+    #df = df.sample(frac=1, random_state=42)
+
 def reduce_class(df, col_name, class_val, p):
     indices = df.index[df[col_name] == class_val]
     df.drop(indices[:int(len(indices) * p)], inplace=True)
@@ -71,8 +98,6 @@ def split_dataset(dataframe):
 
 class networkDataset(Dataset):
 
-    #classes = ['Benign', 'SYNScan', 'TCPConnectScan', 'UDPScan', 'ICMPFlood', 'UDPFlood', 'SYNFlood', 'HTTPFlood', 'SlowrateDoS']
-
     @property
     def train_labels(self):
         return self.targets
@@ -81,7 +106,7 @@ class networkDataset(Dataset):
     def train_data(self):
         return self.data
 
-    def __init__(self, src_file, train=True, transform=None, target_transform=None, download=False, transforms=None):
+    def __init__(self, src_file, train=True, none=False, all=False, verbose=False, transform=None, target_transform=None, download=False, transforms=None):
         has_transforms = transforms is not None
         has_separate_transform = transform is not None or target_transform is not None
         if has_transforms and has_separate_transform:
@@ -94,12 +119,24 @@ class networkDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
 
+        if none:
+            self.data, self.targets = None, None
+            return
+
         df = pd.read_csv(src_file)
         clean_dataset(df)
-        df[LABEL_COLUMN] = LabelEncoder().fit_transform(df[LABEL_COLUMN])
+        le = LabelEncoder()
+        df[LABEL_COLUMN] = le.fit_transform(df[LABEL_COLUMN])
+        if verbose:
+            print("\nLabelEncoder mappings:")
+            for i, class_label in enumerate(le.classes_):
+                print("{0} --> {1}".format(class_label, i))
         x_data, y_data = split_dataset(df)
-        # y_data_trans = list(map(lambda label: self.classes.index(label), y_data))
 
+        if all:
+            self.data, self.targets = x_data, y_data
+            return
+        
         x_train, x_test, y_train, y_test = train_test_split(x_data, y_data)
 
         if train:
@@ -107,8 +144,6 @@ class networkDataset(Dataset):
         else:
             self.data, self.targets = x_test, y_test
         
-        
-    
     def __len__(self):
         return len(self.data)
     
@@ -123,7 +158,7 @@ class networkDataset(Dataset):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(np.reshape(vector, (5,5)), mode="L")
+        img = Image.fromarray(np.reshape(vector, (IMAGE_EDGE_SIZE,IMAGE_EDGE_SIZE)), mode="L")
 
         #print(img)
 
@@ -190,5 +225,5 @@ DATASET_CONFIGS = {
     'MNIST32': {'size': 32, 'channels': 1, 'classes': 10},
     'CIFAR10': {'size': 32, 'channels': 3, 'classes': 10},
     'CIFAR100': {'size': 32, 'channels': 3, 'classes': 100},
-    '5GNIDD': {'size':5, 'channels': 1, 'classes': 8},
+    '5GNIDD': {'size':IMAGE_EDGE_SIZE, 'channels': 1, 'classes': NUM_CLASSES},
 }

@@ -25,10 +25,12 @@ class SubDataset(Dataset):
     After this selection of samples has been made, it is possible to transform the target-labels,
     which can be useful when doing continual learning with fixed number of output units.'''
 
-    def __init__(self, original_dataset, sub_labels, target_transform=None):
+    def __init__(self, original_dataset, sub_labels, target_transform=None, verbose=False):
         super().__init__()
         self.dataset = original_dataset
         self.sub_indeces = []
+        
+        counts = {label:0 for label in sub_labels}
         for index in range(len(self.dataset)):
             if hasattr(original_dataset, "train_labels"):
                 if self.dataset.target_transform is None:
@@ -44,8 +46,16 @@ class SubDataset(Dataset):
             else:
                 label = self.dataset[index][1]
             if label in sub_labels:
+                counts[label] += 1
                 self.sub_indeces.append(index)
         self.target_transform = target_transform
+
+        verbose and print(f'\tcounts: {counts}') 
+        percentages = {}
+        for label in counts:
+            if counts[label] != 0:
+                percentages[label] = round(counts[label] / len(self.sub_indeces), 4)
+        verbose and print(f'\tpercentages: {percentages}')
 
     def __len__(self):
         return len(self.sub_indeces)
