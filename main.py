@@ -521,7 +521,7 @@ def run(args, verbose=False):
 
     # per class performance
     per_class_performance = {
-        'precision': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
+        # 'precision': confusion_matrix.diagonal()/confusion_matrix.sum(axis=0),
         'recall': confusion_matrix.diagonal()/confusion_matrix.sum(axis=1),
     }
     # if True and verbose:
@@ -535,10 +535,7 @@ def run(args, verbose=False):
     average_performance = {
         'precision': {},
         'recall': {},
-        #'f1-score': {},
     }
-    # for metric in average_performance:
-    #     average_performance[metric] = sum(per_class_performance[metric]) / NUM_CLASSES
     tp_attacks = confusion_matrix[1:, 1:].sum()
     fp_attacks = confusion_matrix[0, 1:].sum()
     fn_attacks = confusion_matrix[1:, 0].sum()
