@@ -349,11 +349,15 @@ def add_cl_options(parser, main=False, compare_all=False, compare_replay=False, 
 
 ##-------------------------------------------------------------------------------------------------------------------##
 
-def add_federated_learning_options(parser, **kwargs):
+def add_fl_options(parser, **kwargs):
     fl_params = parser.add_argument_group('Federated Learning')
-    fl_params.add_argument("--fed-avg", action="store_true", help="use FedAvg algorithm for Federated Learning")
-    fl_params.add_argument('--client-num', type=int, help='number of federated clients')
-    fl_params.add_argument('--client-batch-size', type=int, help='batch size for a federated client')
+    # fl_params.add_argument("--fed-avg", action="store_true", help="use FedAvg algorithm for Federated Learning")
+    fl_params.add_argument("--fl", action="store_true", help="use Federated Learning", default=False)
+    fl_params.add_argument('--fl-num-clients', type=int, help='number of federated clients', default=10)
+    fl_params.add_argument('--fl-global-iters', type=int, help='number of rounds of training (global)', default=10)
+    fl_params.add_argument('--fl-frac', type=int, help='fraction of clients participating per round', default=1)
+    fl_params.add_argument("--fl-iid", action="store_true", help="sample dataset in IID fashion (default)", default=True)
+    fl_params.add_argument("--fl-no-iid", action="store_true", help="sample dataset in non-IID fashion", default=False)
     return parser
 
 ##-------------------------------------------------------------------------------------------------------------------##

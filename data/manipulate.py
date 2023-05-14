@@ -25,10 +25,15 @@ class SubDataset(Dataset):
     After this selection of samples has been made, it is possible to transform the target-labels,
     which can be useful when doing continual learning with fixed number of output units.'''
 
+    @property
+    def train_labels(self):
+        return self.targets
+
     def __init__(self, original_dataset, sub_labels, target_transform=None, verbose=False):
         super().__init__()
         self.dataset = original_dataset
         self.sub_indeces = []
+        self.targets = []
         
         counts = {label:0 for label in sub_labels}
         for index in range(len(self.dataset)):
@@ -48,6 +53,7 @@ class SubDataset(Dataset):
             if label in sub_labels:
                 counts[label] += 1
                 self.sub_indeces.append(index)
+                self.targets.append(label)
         self.target_transform = target_transform
 
         verbose and print(f'\tcounts: {counts}') 

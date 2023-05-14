@@ -10,3 +10,5 @@ store/datasets
 store/results
 
 venv
+
+.vscode

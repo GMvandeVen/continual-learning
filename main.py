@@ -4,6 +4,9 @@ import numpy as np
 import time
 import torch
 from torch import optim
+from federated.sampling import sample_iid
+from federated.train import train_fl
+from federated.utils import fl_exp_details
 # -custom-written libraries
 import utils
 from utils import checkattr
@@ -36,7 +39,7 @@ def handle_inputs():
     parser = options.add_model_options(parser, **kwargs)
     parser = options.add_train_options(parser, **kwargs)
     parser = options.add_cl_options(parser, **kwargs)
-    parser = options.add_federated_learning_options(parser, **kwargs)
+    parser = options.add_fl_options(parser, **kwargs)
     # Parse, process and check chosen options
     args = parser.parse_args()
     set_method_options(args)                         # -if a method's "convenience"-option is chosen, select components
@@ -395,6 +398,22 @@ def run(args, verbose=False):
 
     #-------------------------------------------------------------------------------------------------#
 
+    #------------------------------#
+    #----- FEDERATED LEARNING -----#
+    #------------------------------#
+
+    # Is federated learning used?
+    if args.fl:
+        # Get sample function
+        if args.fl_iid:
+            sample_fn = sample_iid
+        elif args.fl_noiid:
+            raise NotImplementedError("'sample_noiid' hasn't been implemented yet")
+
+        fl_exp_details(args.fl_iid, args.fl_num_clients, args.fl_frac, args.batch, args.iters, args.fl_global_iters)
+
+    #-------------------------------------------------------------------------------------------------#
+
     #--------------------#
     #----- TRAINING -----#
     #--------------------#
@@ -413,14 +432,38 @@ def run(args, verbose=False):
         train_fn = train_fromp if checkattr(args, 'fromp') else (
             train_gen_classifier if checkattr(args, 'gen_classifier') else train_cl
         )
+        # -generator iterations (replay)
+        g_iters = args.g_iters if hasattr(args, 'g_iters') else args.iters
         # -perform training
-        train_fn(
-            model, train_datasets, iters=args.iters, batch_size=args.batch, baseline=baseline,
-            sample_cbs=sample_cbs, eval_cbs=eval_cbs, loss_cbs=loss_cbs, context_cbs=context_cbs,
-            # -if using generative replay with a separate generative model:
-            generator=generator, gen_iters=args.g_iters if hasattr(args, 'g_iters') else args.iters,
-            gen_loss_cbs=generator_loss_cbs,
-        )
+        # Use federated learning?
+        if args.fl:
+            train_fl(
+                model,
+                train_datasets,
+                local_train_fn=train_fn,
+                sample_fn=sample_fn,
+                global_iters=args.fl_global_iters,
+                local_iters=args.iters,
+                frac=args.fl_frac,
+                num_clients=args.fl_num_clients,
+                batchs_size=args.batch,
+                baseline=baseline,
+                loss_cbs=loss_cbs,
+                eval_cbs=eval_cbs,
+                sample_cbs=sample_cbs,
+                context_cbs=context_cbs,
+                generator=generator,
+                gen_iters=g_iters,
+                gen_loss_cbs=generator_loss_cbs,
+            )
+        else:
+            train_fn(
+                model, train_datasets, iters=args.iters, batch_size=args.batch, baseline=baseline,
+                sample_cbs=sample_cbs, eval_cbs=eval_cbs, loss_cbs=loss_cbs, context_cbs=context_cbs,
+                # -if using generative replay with a separate generative model:
+                generator=generator, gen_iters=g_iters,
+                gen_loss_cbs=generator_loss_cbs,
+            )
         # -get total training-time in seconds, write to file and print to screen
         if args.time:
             training_time = time.time() - start
