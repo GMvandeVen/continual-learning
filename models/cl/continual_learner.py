@@ -72,6 +72,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         self.epsilon = 0.1          #-> dampening parameter (SI): bounds 'omega' when squared parameter-change goes to 0
         self.offline = False        #-> use separate penalty term per context (as in original EWC paper)
         self.gamma = 1.             #-> decay-term for old contexts' contribution to cummulative FI (as in 'Online EWC')
+        self.randomize_fisher = False
 
     def _device(self):
         return next(self.parameters()).device
@@ -214,7 +215,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         self.eval()
 
         # Create data-loader to give batches of size 1 (unless specifically asked to do otherwise)
-        data_loader = get_data_loader(dataset, batch_size=1 if self.fisher_batch==1 else self.fisher_batch,
+        data_loader = get_data_loader(dataset, batch_size=1 if self.fisher_batch is None else self.fisher_batch,
                                       cuda=self._is_on_cuda())
 
         # Estimate the FI-matrix for [self.fisher_n] batches of size 1
@@ -244,6 +245,10 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                                 n = n.replace('.', '__')
                                 if p.grad is not None:
                                     est_fisher_info[n] += label_weights[0][label_index] * (p.grad.detach() ** 2)
+                                if self.randomize_fisher:
+                                    idx = torch.randperm(est_fisher_info[n].nelement())
+                                    est_fisher_info[n] = est_fisher_info[n].view(-1)[idx].view(
+                                        est_fisher_info[n].size())
             else:
                 # -only use one particular label for each datapoint
                 if self.fisher_labels=='true':
@@ -275,6 +280,9 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                             n = n.replace('.', '__')
                             if p.grad is not None:
                                 est_fisher_info[n] += p.grad.detach() ** 2
+                            if self.randomize_fisher:
+                                idx = torch.randperm(est_fisher_info[n].nelement())
+                                est_fisher_info[n] = est_fisher_info[n].view(-1)[idx].view(est_fisher_info[n].size())
 
         # Normalize by sample size used for estimation
         est_fisher_info = {n: p/index for n, p in est_fisher_info.items()}
@@ -390,7 +398,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
             est_fisher_info["classifier"] = initialize_for_fcLayer(classifier)
             return est_fisher_info
 
-        def update_fisher_info_layer(est_fisher_info, intermediate, label, layer, n_samples):
+        def update_fisher_info_layer(est_fisher_info, intermediate, label, layer, n_samples, weight=1):
             if not isinstance(layer, fc.layers.fc_layer):
                 raise NotImplemented
             if not hasattr(layer, 'phantom'):
@@ -410,15 +418,16 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
             A = abar[..., None] @ abar[..., None, :]
             Ao = est_fisher_info[label]["A"].to(self._device())
             Go = est_fisher_info[label]["G"].to(self._device())
-            est_fisher_info[label]["A"] = Ao + A / n_samples
-            est_fisher_info[label]["G"] = Go + G / n_samples
+            est_fisher_info[label]["A"] = Ao + weight * A / n_samples
+            est_fisher_info[label]["G"] = Go + weight * G / n_samples
 
-        def update_fisher_info(est_fisher_info, intermediate, n_samples):
+        def update_fisher_info(est_fisher_info, intermediate, n_samples, weight=1):
             for i in range(1, fcE.layers + 1):
                 label = f"fcLayer{i}"
                 layer = getattr(fcE, label)
-                update_fisher_info_layer(est_fisher_info, intermediate, label, layer, n_samples)
-            update_fisher_info_layer(est_fisher_info, intermediate, "classifier", self.classifier, n_samples)
+                update_fisher_info_layer(est_fisher_info, intermediate, label, layer, n_samples, weight=weight)
+            update_fisher_info_layer(est_fisher_info, intermediate, "classifier", self.classifier, n_samples,
+                                     weight=weight)
 
         # initialize estimated fisher info
         est_fisher_info = initialize()
@@ -426,13 +435,14 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         mode = self.training
         self.eval()
 
-        # Create data-loader to give batches of size 1
-        data_loader = get_data_loader(dataset, batch_size=1, cuda=self._is_on_cuda())
+        # Create data-loader to give batches of size 1 (unless specifically asked to do otherwise)
+        data_loader = get_data_loader(dataset, batch_size=1 if self.fisher_batch is None else self.fisher_batch,
+                                      cuda=self._is_on_cuda())
 
         n_samples = len(data_loader) if self.fisher_n is None else self.fisher_n
 
         # Estimate the FI-matrix for [self.fisher_n] batches of size 1
-        for i, (x, _) in enumerate(data_loader):
+        for i, (x, y) in enumerate(data_loader):
             # break from for-loop if max number of samples has been reached
             if i > n_samples:
                 break
@@ -440,18 +450,46 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
             x = x.to(self._device())
             _output, intermediate = self(x, return_intermediate=True)
             output = _output if allowed_classes is None else _output[:, allowed_classes]
-            # -use predicted label to calculate loglikelihood:
-            #                 label = output.argmax(1)
-            dist = Categorical(logits=F.log_softmax(output, dim=1))
-            label = dist.sample().detach()  # do not differentiate through
+            # calculate FI-matrix (according to one of the four options)
+            if self.fisher_labels=='all':
+                # -use a weighted combination of all labels
+                with torch.no_grad():
+                    label_weights = F.softmax(output, dim=1)  # --> get weights, which shouldn't have gradient tracked
+                for label_index in range(output.shape[1]):
+                    label = torch.LongTensor([label_index]).to(self._device())
+                    negloglikelihood = F.nll_loss(F.log_softmax(output, dim=1), label)
+                    # Calculate gradient of negative loglikelihood
+                    self.zero_grad()
+                    negloglikelihood.backward(retain_graph=True if (label_index+1)<output.shape[1] else False)
+                    update_fisher_info(est_fisher_info, intermediate, n_samples, weight=label_weights[0][label_index])
+            else:
+                # -only use one particular label for each datapoint
+                if self.fisher_labels == 'true':
+                    # --> use provided true label to calculate loglikelihood --> "empirical Fisher":
+                    label = torch.LongTensor([y]) if type(y) == int else y  # -> shape: [self.fisher_batch]
+                    if allowed_classes is not None:
+                        label = [int(np.where(i == allowed_classes)[0][0]) for i in label.numpy()]
+                        label = torch.LongTensor(label)
+                    label = label.to(self._device())
+                elif self.fisher_labels == 'pred':
+                    # --> use predicted label to calculate loglikelihood:
+                    label = output.max(1)[1]
+                elif self.fisher_labels == 'sample':
+                    # --> sample one label from predicted probabilities
+                    with torch.no_grad():
+                        label_weights = F.softmax(output, dim=1)  # --> get predicted probabilities
+                    weights_array = np.array(label_weights[0].cpu())  # --> change to np-array, avoiding rounding errors
+                    label = np.random.choice(len(weights_array), 1, p=weights_array / weights_array.sum())
+                    label = torch.LongTensor(label).to(self._device())  # --> change label to tensor on correct device
 
-            # calculate negative log-likelihood
-            negloglikelihood = F.nll_loss(F.log_softmax(output, dim=1), label)
+                # calculate negative log-likelihood
+                negloglikelihood = F.nll_loss(F.log_softmax(output, dim=1), label)
 
-            # Calculate gradient of negative loglikelihood
-            self.zero_grad()
-            negloglikelihood.backward()
-            update_fisher_info(est_fisher_info, intermediate, n_samples)
+                # Calculate gradient of negative loglikelihood
+                self.zero_grad()
+                negloglikelihood.backward()
+                update_fisher_info(est_fisher_info, intermediate, n_samples)
+
 
         for label in est_fisher_info:
             An = est_fisher_info[label]["A"].to(self._device())  # new kronecker factor

@@ -329,17 +329,19 @@ class Classifier(ContinualLearner, MemoryBuffer):
         if self.precondition:
 
             if self.importance_weighting=='fisher' and not self.fisher_kfac:
-                #--> scale gradients by inverse diagonal Fisher
-                for gen_params in self.param_list:
-                    for n, p in gen_params():
-                        if p.requires_grad:
-                            # Retrieve prior fisher matrix
-                            n = n.replace(".", "__")
-                            fisher = getattr(self, "{}_EWC_estimated_fisher{}".format(n, "" if self.online else context))
-                            # Scale loss landscape by inverse prior fisher and divide learning rate by data size
-                            scale = (fisher + self.alpha**2) ** (-1)
-                            p.grad *= scale  # scale lr by inverse prior information
-                            p.grad /= self.data_size  # scale lr by prior (necessary for stability in 1st context)
+                if self.context_count>0:
+                    #--> scale gradients by inverse diagonal Fisher
+                    for gen_params in self.param_list:
+                        for n, p in gen_params():
+                            if p.requires_grad:
+                                # Retrieve prior fisher matrix
+                                n = n.replace(".", "__")
+                                fisher = getattr(self, "{}_EWC_estimated_fisher".format(n))
+                                # Scale loss landscape by inverse prior fisher and divide learning rate by data size
+                                scale = (fisher + self.alpha**2) ** (-1)
+                                p.grad *= scale  # scale lr by inverse prior information
+                                if self.data_size is not None:
+                                    p.grad /= self.data_size  # scale lr by prior (necessary for stability in 1st context)
 
             elif self.importance_weighting=='fisher' and self.fisher_kfac:
                 #--> scale gradients by inverse Fisher kronecker factors
