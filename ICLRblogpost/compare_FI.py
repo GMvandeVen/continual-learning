@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
+import sys
 import os
 import numpy as np
+# -change working directory to parent directory
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # -custom-written code
 import main
-import utils
 from params.param_stamp import get_param_stamp_from_args
 from params.param_values import check_for_errors,set_default_values
 from params import options
@@ -14,18 +16,6 @@ import torch
 ## Parameter-values to compare
 lamda_list = [1., 10., 100., 1000., 10000., 100000., 1000000., 10000000., 100000000., 1000000000., 10000000000.,
               100000000000., 1000000000000., 10000000000000.]
-#lamda_list = [1., 1000., 1000000., 1000000000., 1000000000000.]
-lamda_list_permMNIST = [1., 10., 100., 1000., 10000., 100000., 1000000., 10000000.]
-lamda_list_CIFAR = [1., 10., 100., 1000., 10000., 100000., 1000000., 10000000., 100000000., 1000000000., 10000000000.,
-                    100000000000., 1000000000000., 10000000000000., 100000000000000.]
-#lamda_list_CIFAR = [1., 100., 10000., 1000000., 100000000., 10000000000., 10000000000.]
-#lamda_list_CIFAR = [1., 100., 10000., 1000000., 100000000.]#, 10000000000., 10000000000.]
-lamda_list = [1., 10., 100., 1000., 10000., 100000., 1000000., 10000000., 100000000., 1000000000., 10000000000.,
-              100000000000., 1000000000000., 10000000000000.]
-lamda_list_permMNIST = [1., 10., 100., 1000., 10000., 100000., 1000000., 10000000., 100000000., 1000000000., 10000000000.,
-                        100000000000.]
-lamda_list_permMNIST = [1., 10., 100., 1000., 10000., 100000., 1000000., 10000000., 100000000., 1000000000., 10000000000.,
-                        100000000000.]
 
 
 ## Function for specifying input-options and organizing / checking them
@@ -40,11 +30,11 @@ def handle_inputs():
     parser = options.add_problem_options(parser, **kwargs)
     parser = options.add_model_options(parser, **kwargs)
     parser = options.add_train_options(parser, **kwargs)
-    #parser = options.add_cl_options(parser, **kwargs)
     parser.add_argument('--n-seeds', type=int, default=1, help='how often to repeat?')
-    parser.add_argument("--precondition", action='store_true', help="parameter regularization by gradient projection")
-    parser.add_argument("--alpha", type=float, default=1e-10, help="small constant stabilizing inversion importance matrix")
-    parser.add_argument('--no-all', action='store_true', help='do not run the time-consuming "ALL"')
+    # Add options specific for EWC
+    param_reg = parser.add_argument_group('Parameter Regularization')
+    param_reg.add_argument('--online', action='store_true', help='use Online EWC rather than Offline EWC')
+    param_reg.add_argument("--fisher-n-all", type=float, default=500, help="how many samples to approximate FI in 'ALL-n=X'")
     # Parse, process (i.e., set defaults for unselected options) and check chosen options
     args = parser.parse_args()
     args.log_per_context = True
@@ -106,9 +96,6 @@ if __name__ == '__main__':
     cuda = torch.cuda.is_available() and args.cuda
     print("CUDA is {}used".format("" if cuda else "NOT(!!) "))
 
-    ## Select parameter-lists based on chosen experiment
-    lamda_list = lamda_list_permMNIST if args.experiment=="permMNIST" else (lamda_list_CIFAR if args.experiment=="CIFAR100" else lamda_list)
-
     #-------------------------------------------------------------------------------------------------#
 
     #--------------------------#
@@ -117,45 +104,32 @@ if __name__ == '__main__':
 
     seed_list = list(range(args.seed, args.seed+args.n_seeds))
 
-    precondition = args.precondition
-    args.precondition = False
-
     ## Baselline
     args.replay = "none"
     BASE = {}
     BASE = collect_all(BASE, seed_list, args, name="None")
 
-    args.precondition = precondition
+    # -set EWC-specific arguments
     args.weight_penalty = True
     args.importance_weighting = 'fisher'
-    args.fisher_kfac = True
-    args.offline = False
-    args.fisher_batch = 1
+    args.offline = False if args.online else True
 
     ## EWC, "sample"
     SAMPLE = {}
     args.fisher_labels = "sample"
     args.fisher_n = None
+    args.fisher_batch = 1
     for ewc_lambda in lamda_list:
         args.reg_strength=ewc_lambda
         SAMPLE[ewc_lambda] = {}
         SAMPLE[ewc_lambda] = collect_all(SAMPLE[ewc_lambda], seed_list, args,
                                          name="EWC -- FI-labels='sample' (lambda={})".format(ewc_lambda))
 
-    ## EWC, "pred"
-    PRED = {}
-    args.fisher_labels = "pred"
-    args.fisher_n = None
-    for ewc_lambda in lamda_list:
-        args.reg_strength=ewc_lambda
-        PRED[ewc_lambda] = {}
-        PRED[ewc_lambda] = collect_all(PRED[ewc_lambda], seed_list, args,
-                                       name="EWC -- FI-labels='pred' (lambda={})".format(ewc_lambda))
-
     ## EWC, "true"
     TRUE = {}
     args.fisher_labels = "true"
     args.fisher_n = None
+    args.fisher_batch = 1
     for ewc_lambda in lamda_list:
         args.reg_strength=ewc_lambda
         TRUE[ewc_lambda] = {}
@@ -172,30 +146,29 @@ if __name__ == '__main__':
         TRUE128[ewc_lambda] = {}
         TRUE128[ewc_lambda] = collect_all(TRUE128[ewc_lambda], seed_list, args,
                                           name="EWC -- FI-labels='true' - batch=128 (lambda={})".format(ewc_lambda))
-    args.fisher_batch = 1
 
-    ## EWC, "all" -- only 500 samples per task
+    ## EWC, "all" -- only [args.fisher_n_all] samples per task
     ALL500 = {}
     args.fisher_labels = "all"
-    args.fisher_n = 500
+    args.fisher_n = args.fisher_n_all
+    args.fisher_batch = 1
     for ewc_lambda in lamda_list:
         args.reg_strength=ewc_lambda
         ALL500[ewc_lambda] = {}
         ALL500[ewc_lambda] = collect_all(ALL500[ewc_lambda], seed_list, args,
-                                         name="EWC -- FI-labels='all' - n=500 (lambda={})".format(ewc_lambda))
+                                         name="EWC -- FI-labels='all' - n={} (lambda={})".format(args.fisher_n_all, ewc_lambda))
 
     ## EWC, "all"
-    if not utils.checkattr(args, 'no_all'):
-        ALL = {}
-        args.fisher_labels = "all"
-        args.fisher_n = None
-        for ewc_lambda in lamda_list:
-            args.reg_strength=ewc_lambda
-            ALL[ewc_lambda] = {}
-            ALL[ewc_lambda] = collect_all(ALL[ewc_lambda], seed_list, args,
-                                          name="EWC -- FI-labels='all' (lambda={})".format(ewc_lambda))
-    else:
-        ALL = ALL500
+    ALL = {}
+    args.fisher_labels = "all"
+    args.fisher_n = None
+    args.fisher_batch = 1
+    for ewc_lambda in lamda_list:
+        args.reg_strength=ewc_lambda
+        ALL[ewc_lambda] = {}
+        ALL[ewc_lambda] = collect_all(ALL[ewc_lambda], seed_list, args,
+                                        name="EWC -- FI-labels='all' (lambda={})".format(ewc_lambda))
+
 
     #-------------------------------------------------------------------------------------------------#
 
@@ -209,20 +182,16 @@ if __name__ == '__main__':
 
     base_entries = [BASE[seed][1] for seed in seed_list]
     mean_base = np.mean(base_entries)
-    sem_base = (np.sqrt(np.var(base_entries)) / (args.n_seeds-1)) if args.n_seeds>1 else None
+    sem_base = (np.sqrt(np.var(base_entries)) / np.sqrt(args.n_seeds)) if args.n_seeds>1 else None
 
     ###---EWC "all" ---###
-    # new_entries = [BASE[seed][1] for seed in seed_list]
-    # mean_all = [np.mean(new_entries)]
-    # if args.n_seeds>1:
-    #     sem_all = [np.sqrt(np.var(new_entries)) / (args.n_seeds-1)]
     mean_all = []
     sem_all = []
     for ewc_lambda in lamda_list:
         new_entries = [ALL[ewc_lambda][seed][1] for seed in seed_list]
         mean_all.append(np.mean(new_entries))
         if args.n_seeds>1:
-            sem_all.append(np.sqrt(np.var(new_entries)) / (args.n_seeds-1))
+            sem_all.append(np.sqrt(np.var(new_entries)) / np.sqrt((args.n_seeds)))
     lambda_all = ext_lambda_list[np.argmax(mean_all)]
     # -print on screen
     print("\n\nEWC  --  FI-labels='all'")
@@ -238,10 +207,10 @@ if __name__ == '__main__':
         new_entries = [ALL500[ewc_lambda][seed][1] for seed in seed_list]
         mean_all500.append(np.mean(new_entries))
         if args.n_seeds>1:
-            sem_all500.append(np.sqrt(np.var(new_entries)) / (args.n_seeds-1))
+            sem_all500.append(np.sqrt(np.var(new_entries)) / np.sqrt((args.n_seeds)))
     lambda_all500 = ext_lambda_list[np.argmax(mean_all500)]
     # -print on screen
-    print("\n\nEWC  --  FI-labels='all' - n=500")
+    print("\n\nEWC  --  FI-labels='all' - n={}".format(args.fisher_n_all))
     print(" param list (lambda): {}".format(ext_lambda_list))
     print("  {}".format(mean_all500))
     print("---> lambda = {}     --    {}".format(ext_lambda_list[np.argmax(mean_all500)], np.max(mean_all500)))
@@ -254,29 +223,13 @@ if __name__ == '__main__':
         new_entries = [SAMPLE[ewc_lambda][seed][1] for seed in seed_list]
         mean_sample.append(np.mean(new_entries))
         if args.n_seeds>1:
-            sem_sample.append(np.sqrt(np.var(new_entries)) / (args.n_seeds-1))
+            sem_sample.append(np.sqrt(np.var(new_entries)) / np.sqrt((args.n_seeds)))
     lambda_sample = ext_lambda_list[np.argmax(mean_sample)]
     # -print on screen
     print("\n\nEWC  --  FI-labels='sample'")
     print(" param list (lambda): {}".format(ext_lambda_list))
     print("  {}".format(mean_sample))
     print("---> lambda = {}     --    {}".format(ext_lambda_list[np.argmax(mean_sample)], np.max(mean_sample)))
-
-    ###---EWC "pred" ---###
-    mean_pred = []
-    if args.n_seeds>1:
-        sem_pred = []
-    for ewc_lambda in lamda_list:
-        new_entries = [PRED[ewc_lambda][seed][1] for seed in seed_list]
-        mean_pred.append(np.mean(new_entries))
-        if args.n_seeds>1:
-            sem_pred.append(np.sqrt(np.var(new_entries)) / (args.n_seeds-1))
-    lambda_pred = ext_lambda_list[np.argmax(mean_pred)]
-    # -print on screen
-    print("\n\nEWC  --  FI-labels='pred'")
-    print(" param list (lambda): {}".format(ext_lambda_list))
-    print("  {}".format(mean_pred))
-    print("---> lambda = {}     --    {}".format(ext_lambda_list[np.argmax(mean_pred)], np.max(mean_pred)))
 
     ###---EWC "true" ---###
     mean_true = []
@@ -286,7 +239,7 @@ if __name__ == '__main__':
         new_entries = [TRUE[ewc_lambda][seed][1] for seed in seed_list]
         mean_true.append(np.mean(new_entries))
         if args.n_seeds>1:
-            sem_true.append(np.sqrt(np.var(new_entries)) / (args.n_seeds-1))
+            sem_true.append(np.sqrt(np.var(new_entries)) / np.sqrt((args.n_seeds)))
     lambda_true = ext_lambda_list[np.argmax(mean_true)]
     # -print on screen
     print("\n\nEWC  --  FI-labels='true'")
@@ -302,7 +255,7 @@ if __name__ == '__main__':
         new_entries = [TRUE128[ewc_lambda][seed][1] for seed in seed_list]
         mean_true128.append(np.mean(new_entries))
         if args.n_seeds>1:
-            sem_true128.append(np.sqrt(np.var(new_entries)) / (args.n_seeds-1))
+            sem_true128.append(np.sqrt(np.var(new_entries)) / np.sqrt((args.n_seeds)))
     lambda_true128 = ext_lambda_list[np.argmax(mean_true128)]
     # -print on screen
     print("\n\nEWC  --  FI-labels='true' - batch=128")
@@ -330,10 +283,10 @@ if __name__ == '__main__':
     ########### ALL HYPERPARAM-VALUES ###########
 
     # - select lines, names and colors
-    lines = [mean_all, mean_all500, mean_sample, mean_pred, mean_true, mean_true128]
-    errors = [sem_all, sem_all500, sem_sample, sem_pred, sem_true, sem_true128] if args.n_seeds>1 else None
-    names = ["All", "All - n=500", "Sample", "Pred", "True", "True - batch=128"]
-    colors = ["black", "grey", "red", "purple", "orange", "blue"]
+    lines = [mean_all, mean_all500, mean_sample, mean_true, mean_true128]
+    errors = [sem_all, sem_all500, sem_sample, sem_true, sem_true128] if args.n_seeds>1 else None
+    names = ["All", "All - n={}".format(args.fisher_n_all), "Sample", "True", "True - batch=128"]
+    colors = ["black", "grey", "red", "orange", "blue"]
     # - make plot (line plot - only average)
     figure = my_plt.plot_lines(lines, x_axes=ext_lambda_list, ylabel=ylabel, line_names=names, list_with_errors=errors,
                                title=title, x_log=True, xlabel="EWC: lambda log-scale)",
@@ -349,19 +302,19 @@ if __name__ == '__main__':
     train_time = {}
     for seed in seed_list:
         ave_prec[seed] = [BASE[seed][1], ALL[lambda_all][seed][1], ALL500[lambda_all500][seed][1], SAMPLE[lambda_sample][seed][1],
-                          PRED[lambda_pred][seed][1], TRUE[lambda_true][seed][1], TRUE128[lambda_true128][seed][1]]
+                          TRUE[lambda_true][seed][1], TRUE128[lambda_true128][seed][1]]
         train_time[seed] = [BASE[seed][0], ALL[lambda_all][seed][0], ALL500[lambda_all500][seed][0], SAMPLE[lambda_sample][seed][0],
-                            PRED[lambda_pred][seed][0], TRUE[lambda_true][seed][0], TRUE128[lambda_true128][seed][0]]
-    names = ["None", "All", "All - n=500", "Sample", "Pred", "True", "True - batch=128"]
-    colors = ["green", "black", "grey", "red", "purple", "orange", "blue"]
-    ids = [0, 1, 2, 3, 4, 5, 6]
+                            TRUE[lambda_true][seed][0], TRUE128[lambda_true128][seed][0]]
+    names = ["None", "All", "All - n={}".format(args.fisher_n_all), "Sample", "True", "True - batch=128"]
+    colors = ["green", "black", "grey", "red", "orange", "blue"]
+    ids = [0, 1, 2, 3, 4, 5]
 
     # Avearge accuracy
     # -bar-plot
     means = [np.mean([ave_prec[seed][id] for seed in seed_list]) for id in ids]
     if len(seed_list)>1:
-        sems = [np.sqrt(np.var([ave_prec[seed][id] for seed in seed_list])/(len(seed_list)-1)) for id in ids]
-        cis = [1.96*np.sqrt(np.var([ave_prec[seed][id] for seed in seed_list])/(len(seed_list)-1)) for id in ids]
+        sems = [np.sqrt(np.var([ave_prec[seed][id] for seed in seed_list]))/np.sqrt(len(seed_list)) for id in ids]
+        cis = [1.96*np.sqrt(np.var([ave_prec[seed][id] for seed in seed_list]))/np.sqrt(len(seed_list)) for id in ids]
     figure = my_plt.plot_bar(means, names=names, colors=colors, ylabel="average precision (after all tasks)",
                              title=title, yerr=cis if len(seed_list)>1 else None, ylim=(0,1))
     figure_list.append(figure)
@@ -380,8 +333,8 @@ if __name__ == '__main__':
     # -bar-plot
     means = [np.mean([train_time[seed][id] for seed in seed_list]) for id in ids]
     if len(seed_list) > 1:
-        sems = [np.sqrt(np.var([train_time[seed][id] for seed in seed_list]) / (len(seed_list) - 1)) for id in ids]
-        cis = [1.96 * np.sqrt(np.var([train_time[seed][id] for seed in seed_list]) / (len(seed_list) - 1)) for id in ids]
+        sems = [np.sqrt(np.var([train_time[seed][id] for seed in seed_list])) / np.sqrt(len(seed_list)) for id in ids]
+        cis = [1.96 * np.sqrt(np.var([train_time[seed][id] for seed in seed_list])) / np.sqrt(len(seed_list)) for id in ids]
     figure = my_plt.plot_bar(means, names=names, colors=colors, ylabel="Training Time (in Sec)",
                              title=title, yerr=cis if len(seed_list) > 1 else None)
     figure_list.append(figure)

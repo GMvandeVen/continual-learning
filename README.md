@@ -44,7 +44,14 @@ chmod +x main*.py compare*.py all_results.sh
 This code repository is used for the
 [NeurIPS 2022 tutorial "Lifelong Learning Machines"](https://sites.google.com/view/neurips2022-llm-tutorial).
 For details and instructions on how to re-run the experiments presented in this tutorial,
-see the file [NeurIPS_tutorial.md](NeurIPS_tutorial.md).
+see the folder [NeurIPStutorial](NeurIPStutorial/README.md).
+
+
+## ICLR blog post "On the computation of the Fisher Information in continual learning"
+This code repository is also used for the
+[ICLR 2025 blog post "On the computation of the Fisher Information in continual learning"](...link to be added ...).
+For details and instructions on how to re-run the experiments reported in this blog post,
+see the folder [ICLRblogpost](ICLRblogpost/README.md).
 
 
 ## Demos
@@ -88,7 +95,7 @@ The main options of this script are:
 To run specific methods, you can use the following:
 - Separate Networks: `./main.py --separate-networks`
 - Context-dependent-Gating (XdG): `./main.py --xdg`
-- Elastic Weight Consolidation (EWC): `./main.py --ewc`
+- Elastic Weight Consolidation (EWC): `./main.py --ewc` (read first: [ICLR-blogpost](ICLRblogpost/README.md))
 - Synaptic Intelligence (SI): `./main.py --si`
 - Learning without Forgetting (LwF): `./main.py --lwf`
 - Functional Regularization Of the Memorable Past (FROMP): `./main.py --fromp`

@@ -221,7 +221,6 @@ def run(args, verbose=False):
                 model.initialize_kfac_fisher()
             else:
                 model.initialize_fisher()
-        model.randomize_fisher = checkattr(args, 'randomize_fisher')
 
     # Parameter regularization by adding a weight penalty (e.g., EWC, SI, NCL, EWC-KFAC)
     if isinstance(model, ContinualLearner) and checkattr(args, 'weight_penalty'):
