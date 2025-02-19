@@ -44,14 +44,14 @@ chmod +x main*.py compare*.py all_results.sh
 This code repository is used for the
 [NeurIPS 2022 tutorial "Lifelong Learning Machines"](https://sites.google.com/view/neurips2022-llm-tutorial).
 For details and instructions on how to re-run the experiments presented in this tutorial,
-see the folder [NeurIPStutorial](NeurIPStutorial/README.md).
+see the folder [NeurIPS-tutorial](NeurIPStutorial).
 
 
 ## ICLR blog post "On the computation of the Fisher Information in continual learning"
 This code repository is also used for the
-[ICLR 2025 blog post "On the computation of the Fisher Information in continual learning"](...link to be added ...).
+[ICLR 2025 blog post "On the computation of the Fisher Information in continual learning"](https://arxiv.org/abs/2502.11756).
 For details and instructions on how to re-run the experiments reported in this blog post,
-see the folder [ICLRblogpost](ICLRblogpost/README.md).
+see the folder [ICLR-blogpost](ICLRblogpost).
 
 
 ## Demos
