@@ -21,7 +21,7 @@ def add_general_options(parser, main=False, comparison=False, compare_hyper=Fals
     parser.add_argument('--seed', type=int, default=0, help='[first] random seed (for each random-module used)')
     if comparison and (not compare_hyper):
         parser.add_argument('--n-seeds', type=int, default=1, help='how often to repeat?')
-    parser.add_argument('--no-gpus', action='store_false', dest='cuda', help="don't use GPUs")
+    parser.add_argument('--no-gpus', action='store_false', dest='gpu', help="don't use GPUs")
     parser.add_argument('--no-save', action='store_false', dest='save', help="don't save trained models")
     parser.add_argument('--full-stag', type=str, metavar='STAG', default='none', help="tag for saving full model")
     parser.add_argument('--full-ltag', type=str, metavar='LTAG', default='none', help="tag for loading full model")
