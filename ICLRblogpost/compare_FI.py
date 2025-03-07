@@ -92,9 +92,15 @@ if __name__ == '__main__':
     if not os.path.isdir(args.p_dir):
         os.mkdir(args.p_dir)
 
-    # Use cuda?
-    cuda = torch.cuda.is_available() and args.cuda
-    print("CUDA is {}used".format("" if cuda else "NOT(!!) "))
+    # Use cuda or mps (apple silicon)?
+    cuda = torch.cuda.is_available() and args.gpu
+    mps = torch.backends.mps.is_available() and args.gpu
+    if cuda:
+        device = torch.device("cuda")
+    elif mps:
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
 
     #-------------------------------------------------------------------------------------------------#
 

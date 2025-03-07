@@ -34,19 +34,32 @@ def handle_inputs():
 ## Function for running one experiment
 def run(args, verbose=False):
 
-    # Use cuda?
-    cuda = torch.cuda.is_available() and args.cuda
-    device = torch.device("cuda" if cuda else "cpu")
+    # Use cuda or mps (apple silicon)?
+    cuda = torch.cuda.is_available() and args.gpu
+    mps = torch.backends.mps.is_available() and args.gpu
+    if cuda:
+        device = torch.device("cuda")
+    elif mps:
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
 
-    # Report whether cuda is used
+    # Report whether cuda or mps is used
     if verbose:
-        print("CUDA is {}used".format("" if cuda else "NOT(!!) "))
+        if cuda:
+            print("CUDA is used")
+        elif mps:
+            print("MPS is used (apple silicon GPU)")
+        else:
+            print("NO GPU is used!")
 
     # Set random seeds
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     if cuda:
         torch.cuda.manual_seed(args.seed)
+    elif mps:
+        torch.mps.manual_seed(args.seed)
 
     #-------------------------------------------------------------------------------------------------#
 
