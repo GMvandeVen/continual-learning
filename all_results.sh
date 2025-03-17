@@ -5,8 +5,8 @@
 
 ########### ICLR 2025 Blogpost ###########
 
-python3 ICLRblogpost/compare_FI.py --seed=1 --n-seeds=30 --experiment=splitMNIST --scenario=task --online
-python3 ICLRblogpost/compare_FI.py --seed=1 --n-seeds=30 --experiment=CIFAR10 --scenario=task --contexts=5 --conv-type=resNet --fc-layers=1 --iters=2000 --reducing-layers=3 --depth=5 --global-pooling --channels=20 --lr=0.001 --online
+python3 ICLRblogpost/compare_FI.py --seed=1 --n-seeds=30 --experiment=splitMNIST --scenario=task
+python3 ICLRblogpost/compare_FI.py --seed=1 --n-seeds=30 --experiment=CIFAR10 --scenario=task --reducedResNet --iters=2000 --lr=0.001
 
 
 

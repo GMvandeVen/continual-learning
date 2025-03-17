@@ -49,7 +49,14 @@ def set_method_options(args, **kwargs):
 def set_default_values(args, also_hyper_params=True, single_context=False, no_boundaries=False):
     # -set default-values for certain arguments based on chosen experiment
     args.normalize = args.normalize if args.experiment in ('CIFAR10', 'CIFAR100') else False
-    args.depth = (5 if args.experiment in ('CIFAR10', 'CIFAR100') else 0) if args.depth is None else args.depth
+    args.depth = (
+            5 if (args.experiment in ('CIFAR10', 'CIFAR100')) or checkattr(args, 'reducedResNet') else 0
+        ) if args.depth is None else args.depth
+    args.fc_lay = (1 if checkattr(args, 'reducedResNet') else 3) if args.fc_lay is None else args.fc_lay
+    args.channels = (20 if checkattr(args, 'reducedResNet') else 16) if args.channels is None else args.channels
+    args.rl = 3 if checkattr(args, 'reducedResNet') and (args.rl is None) else args.rl
+    args.gp = True if checkattr(args, 'reducedResNet') else args.gp
+    args.conv_type = 'resNet' if checkattr(args, 'reducedResNet') else args.conv_type
     if not single_context:
         args.contexts = (
             5 if args.experiment in ('splitMNIST', 'CIFAR10') else 10

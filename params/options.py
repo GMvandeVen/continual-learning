@@ -95,17 +95,20 @@ def add_problem_options(parser, pretrain=False, no_boundaries=False, **kwargs):
 
 def add_model_options(parser, pretrain=False, compare_replay=False, **kwargs):
     model = parser.add_argument_group('Parameters Main Model')
+    # 'Convenience-commands' that select the defaults for specific architectures
+    model.add_argument('--reducedResNet', action='store_true', help="select defaults for 'Reduced ResNet-18' (e.g., as in Hess et al, 2023)")
     # -convolutional layers
     model.add_argument('--conv-type', type=str, default="standard", choices=["standard", "resNet"])
     model.add_argument('--n-blocks', type=int, default=2, help="# blocks per conv-layer (only for 'resNet')")
     model.add_argument('--depth', type=int, default=None, help="# of convolutional layers (0 = only fc-layers)")
-    model.add_argument('--reducing-layers', type=int, dest='rl', help="# of layers with stride (=image-size halved)")
-    model.add_argument('--channels', type=int, default=16, help="# of channels 1st conv-layer (doubled every 'rl')")
+    model.add_argument('--reducing-layers', type=int, dest='rl', default=None,
+                       help="# of layers with stride (=image-size halved)")
+    model.add_argument('--channels', type=int, default=None, help="# of channels 1st conv-layer (doubled every 'rl')")
     model.add_argument('--conv-bn', type=str, default="yes", help="use batch-norm in the conv-layers (yes|no)")
     model.add_argument('--conv-nl', type=str, default="relu", choices=["relu", "leakyrelu"])
     model.add_argument('--global-pooling', action='store_true', dest='gp', help="ave global pool after conv-layers")
     # -fully connected layers
-    model.add_argument('--fc-layers', type=int, default=3, dest='fc_lay', help="# of fully-connected layers")
+    model.add_argument('--fc-layers', type=int, default=None, dest='fc_lay', help="# of fully-connected layers")
     model.add_argument('--fc-units', type=int, metavar="N", help="# of units in hidden fc-layers")
     model.add_argument('--fc-drop', type=float, default=0., help="dropout probability for fc-units")
     model.add_argument('--fc-bn', type=str, default="no", help="use batch-norm in the fc-layers (no|yes)")

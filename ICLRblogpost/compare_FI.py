@@ -10,7 +10,6 @@ from params.param_stamp import get_param_stamp_from_args
 from params.param_values import check_for_errors,set_default_values
 from params import options
 from visual import visual_plt as my_plt
-import torch
 
 
 ## Parameter-values to compare
@@ -33,8 +32,9 @@ def handle_inputs():
     parser.add_argument('--n-seeds', type=int, default=1, help='how often to repeat?')
     # Add options specific for EWC
     param_reg = parser.add_argument_group('Parameter Regularization')
-    param_reg.add_argument('--online', action='store_true', help='use Online EWC rather than Offline EWC')
-    param_reg.add_argument("--fisher-n-all", type=float, default=500, help="how many samples to approximate FI in 'ALL-n=X'")
+    param_reg.add_argument('--offline', action='store_true', help='use Offline EWC rather than Online EWC')
+    param_reg.add_argument("--fisher-n-all", type=float, default=500, metavar='N',
+                           help="how many samples to approximate FI in 'ALL-n=X'")
     # Parse, process (i.e., set defaults for unselected options) and check chosen options
     args = parser.parse_args()
     args.log_per_context = True
@@ -108,7 +108,6 @@ if __name__ == '__main__':
     # -set EWC-specific arguments
     args.weight_penalty = True
     args.importance_weighting = 'fisher'
-    args.offline = False if args.online else True
 
     ## EWC, "sample"
     SAMPLE = {}
