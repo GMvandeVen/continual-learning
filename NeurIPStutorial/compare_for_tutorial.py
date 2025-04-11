@@ -2,7 +2,7 @@
 import sys
 import os
 import numpy as np
-# -change working directory to parent directory
+# -expand module search path to parent directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # -custom-written code
 import main

@@ -103,7 +103,8 @@ def plot_bar(numbers, names=None, colors=None, ylabel=None, title=None, top_titl
 def plot_lines(list_with_lines, x_axes=None, line_names=None, colors=None, title=None,
                title_top=None, xlabel=None, ylabel=None, ylim=None, figsize=None, list_with_errors=None, errors="shaded",
                x_log=False, with_dots=False, linestyle='solid', h_line=None, h_label=None, h_error=None,
-               h_lines=None, h_colors=None, h_labels=None, h_errors=None):
+               h_lines=None, h_colors=None, h_labels=None, h_errors=None,
+               v_line=None, v_label=None):
     '''Generates a figure containing multiple lines in one plot.
 
     :param list_with_lines: <list> of all lines to plot (with each line being a <list> as well)
@@ -179,6 +180,14 @@ def plot_lines(list_with_lines, x_axes=None, line_names=None, colors=None, title
                     axarr.axhline(y=new_h_line-h_errors[line_id], label=None,
                                   color=None if (h_colors is None) else h_colors[line_id], linewidth=1,
                                   linestyle='dashed')
+                    
+    # add vertical line(s)
+    if v_line is not None:
+        if type(v_line)==list:
+            for id,new_line in enumerate(v_line):
+                axarr.axvline(x=new_line, label=v_label if id==0 else None, color='black')
+        else:
+            axarr.axvline(x=v_line, label=v_label, color='black')
 
     # finish layout
     # -set y-axis
