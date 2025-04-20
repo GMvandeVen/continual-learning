@@ -10,3 +10,8 @@ store/datasets
 store/results
 
 venv
+.venv
+
+# Normally, you would add this file to VCS but it's ignored here
+# because of different torch GPU accelerators 
+poetry.lock
