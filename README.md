@@ -49,7 +49,7 @@ see the folder [NeurIPS-tutorial](NeurIPStutorial).
 
 ## ICLR blog post "On the computation of the Fisher Information in continual learning"
 This repository is also used for the
-[ICLR 2025 blog post "On the computation of the Fisher Information in continual learning"](https://arxiv.org/abs/2502.11756).
+[ICLR 2025 blog post "On the computation of the Fisher Information in continual learning"](https://iclr-blogposts.github.io/2025/blog/fisher/).
 For details and instructions on how to re-run the experiments reported in this blog post,
 see the folder [ICLR-blogpost](ICLRblogpost).
 

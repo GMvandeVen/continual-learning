@@ -1,7 +1,8 @@
 # On the computation of the Fisher Information in continual learning (2025, ICLR Blogpost)
 
 The code in this repository is used for the experiments reported in the
-[ICLR 2025 blog post "On the computation of the Fisher Information in continual learning"](https://arxiv.org/abs/2502.11756).
+[ICLR 2025 blog post "On the computation of the Fisher Information in continual learning"](https://iclr-blogposts.github.io/2025/blog/fisher/)
+(or see the arXiv-preprint [here](https://arxiv.org/abs/2502.11756)).
 
 This blog post compares the performance of Elastic Weight Consolidation (EWC) with various different ways of computing the diagonal elements of the Fisher Information matrix.
 The following options are considered:
@@ -42,7 +43,8 @@ If this is useful, please consider citing the blog post:
   author={van de Ven, Gido M},
   booktitle={ICLR Blogposts 2025},
   year={2025},
-  date={April 28, 2025}
+  date={April 28, 2025},
+  url={https://iclr-blogposts.github.io/2025/blog/fisher/}
 }
 ```
 
