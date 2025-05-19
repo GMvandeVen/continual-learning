@@ -1,0 +1,51 @@
+[project]
+name = "continual-learning"
+version = "1.0.0"
+description = "PyTorch implementation of various methods for continual learning (XdG, EWC, SI, LwF, FROMP, DGR, BI-R, ER, A-GEM, iCaRL, Generative Classifier) in three different scenarios."
+authors = [
+    {name = "Gido van de Ven",email = "gidovandeven@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy (>=2.2.5,<3.0.0)",
+    "scipy (>=1.15.2,<2.0.0)",
+    "pandas (>=2.2.3,<3.0.0)",
+    "tqdm (>=4.67.1,<5.0.0)",
+    "scikit-learn (>=1.6.1,<2.0.0)",
+    "matplotlib (>=3.10.1,<4.0.0)",
+    "visdom (>=0.2.4,<0.3.0)",
+    "jupyterlab (>=4.4.0,<5.0.0)",
+    "ipywidgets (>=8.1.6,<9.0.0)"
+]
+
+[tool.poetry.dependencies]
+torch = [
+    { markers = "extra == 'cpu' and extra != 'cuda'", source = "pytorch-cpu"},
+    { markers = "extra == 'cuda' and extra != 'cpu'", source = "pytorch-cuda"},
+ ]
+torchvision = [
+    { markers = "extra == 'cpu' and extra != 'cuda'", source = "pytorch-cpu"},
+    { markers = "extra == 'cuda' and extra != 'cpu'", source = "pytorch-cuda"},
+ ]
+
+[project.optional-dependencies]
+cpu = ["torch (>=2.6.0)", "torchvision"]
+cuda = ["torch (>=2.6.0)", "torchvision"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+package-mode = false
+
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
+
+[[tool.poetry.source]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu124"
+priority = "explicit"

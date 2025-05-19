@@ -28,17 +28,35 @@ with the following versions of PyTorch and Torchvision:
 * `pytorch 1.11.0`
 * `torchvision 0.12.0`
 
-Further Python-packages used are listed in `requirements.txt`.
-Assuming Python and pip are set up, these packages can be installed using:
-```bash
-pip install -r requirements.txt
-```
+Further Python-packages used are listed in `requirements.txt` and `pyproject.toml`.
 
 The code in this repository itself does not need to be installed, but a number of scripts should be made executable:
 ```bash
 chmod +x main*.py compare*.py all_results.sh
 ```
 
+### Installation via poetry
+If you have poetry installed, you can install all project dependencies with a single command.
+
+For CPU-only PyTorch acceleration:
+```bash
+poetry install --extras "cpu"
+```
+For CUDA PyTorch acceleration:
+```bash
+poetry install --extras "cuda"
+```
+
+The choice of between `cpu` and `cuda` will only affect the source used to install `torch` and `torchvision`.
+
+**Note** that poetry installs dependencies to a virtual environment, not globally.
+
+### Installation via pip
+
+Assuming Python and pip are set up, these packages can be installed using:
+```bash
+pip install -r requirements.txt
+```
 
 ## NeurIPS tutorial "Lifelong Learning Machines"
 This code repository is used for the
