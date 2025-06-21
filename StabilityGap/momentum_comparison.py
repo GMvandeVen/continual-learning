@@ -42,7 +42,7 @@ ax.set_ylim(80, 100)
 ax.legend(loc='lower right', frameon=True, facecolor='#f2f2f2', edgecolor='#e0e0e0', fontsize=15, framealpha=1, borderpad=1)
 
 for switch_id in range(1, CONFIG['n_tasks']):
-    ax.axvline(x=CONFIG['iters'] * switch_id, color='gray', linestyle='--', label='Task switch' if switch_id == 1 else "")
+    ax.axvline(x=CONFIG['iters_per_task'] * switch_id, color='gray', linestyle='--', label='Task switch' if switch_id == 1 else "")
 
 for m, color in zip(momentums, colors):
     momentum_tag = str(m).replace('.', '_')

@@ -1,3 +1,19 @@
+## Understanding How Optimizers Affect the Stability Gap
+
+This code base has modified the original continual learning environment to research the impact of momentum and different optimizers on the stability gap shape in continual learning processes.
+We decided to train and evaluate our model on the MNIST dataset, applying rotations to generate new tasks and, thus, conduct our analysis over a domain-incremental learning setup.
+
+More details can be found in our paper titled *Optimizing for Resilience: Understanding How Optimizers Affect the Stability Gap in Continual Learning*.
+The following components have been changed/added in order to fulfill the research purpose:
+
+* 'data/manipulate.py' was modified to apply the transformations when loading the dataset to speed up computation and avoid redundancy in our case
+* 'StabilityGap/optimizers_experiments.py' contains the script that was run to perform the experiments; this can be run with any of the five optimizers (SGD with Momentum, NAG with Momentum, AdaGrad, RMSprop, Adam) and will generate plots of accuracies over each specific task, as well as a union plot of the recorded accuracy over all tasks; moreover, it reports a series of metrics used to describe the stability gap components and the general stability-plasticity context
+* 'StabilityGap/optimizer_comparison.py' contains a script that generates a plot comparing the results of the adaptive optimization methods (AdaGrad, RMSprop, Adam), loading the data from 'store/data'
+* 'StabilityGap/momentum_comparison.py' contains a script that generates a plot comparing the results of different momentum values for SGD/NAG, loading the data from 'store/data'
+* 'store/data' contains data on the performance over task 1 of a deep neural network (mean and standard error)
+
+The following sections are the same guidelines included in the original repository upon which we built our analysis.
+
 # Continual Learning
 [![DOI](https://zenodo.org/badge/150479999.svg)](https://zenodo.org/badge/latestdoi/150479999)
 
