@@ -81,27 +81,53 @@ class MemorySetDataset(Dataset):
         image = torch.from_numpy(self.memory_sets[class_id][example_id])
         return (image, class_id_to_return)
 
+# ----------------------------------------------------------------------------------------------------------#
 
+# class TransformedDataset(Dataset):
+#     '''To modify an existing dataset with a transform.
+#     This is useful for creating different permutations of MNIST without loading the data multiple times.'''
+
+#     def __init__(self, original_dataset, transform=None, target_transform=None):
+#         super().__init__()
+#         self.dataset = original_dataset
+#         self.transform = transform
+#         self.target_transform = target_transform
+
+#     def __len__(self):
+#         return len(self.dataset)
+
+#     def __getitem__(self, index):
+#         (input, target) = self.dataset[index]
+#         if self.transform:
+#             input = self.transform(input)
+#         if self.target_transform:
+#             target = self.target_transform(target)
+#         return (input, target)
+
+# TRANSFORMING WHEN LOADING
 class TransformedDataset(Dataset):
     '''To modify an existing dataset with a transform.
     This is useful for creating different permutations of MNIST without loading the data multiple times.'''
 
     def __init__(self, original_dataset, transform=None, target_transform=None):
         super().__init__()
-        self.dataset = original_dataset
-        self.transform = transform
-        self.target_transform = target_transform
+
+        self.data = []
+        self.targets = []
+
+        for (input, target) in original_dataset:
+            if transform:
+                input = transform(input)
+            if target_transform:
+                target = target_transform(target)
+            self.data.append(input)
+            self.targets.append(target)
 
     def __len__(self):
-        return len(self.dataset)
-
+        return len(self.data)
+        
     def __getitem__(self, index):
-        (input, target) = self.dataset[index]
-        if self.transform:
-            input = self.transform(input)
-        if self.target_transform:
-            target = self.target_transform(target)
-        return (input, target)
+        return (self.data[index], self.targets[index])
 
 # ----------------------------------------------------------------------------------------------------------#
 

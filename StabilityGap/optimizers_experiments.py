@@ -1,24 +1,20 @@
 #!/usr/bin/env python3
 
-# Standard libraries
 import sys
 import os
 import numpy as np
 import tqdm
-import math
-# Pytorch
+
 import torch
-from torch.nn import functional as F
 from torchvision import datasets, transforms
-# For visualization
+
 from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
 import copy
 from scipy.ndimage import uniform_filter1d
 
-# Expand the module search path to parent directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-# Load custom-written code
+
 import utils
 from visual import visual_plt
 from eval.evaluate import test_acc
@@ -28,7 +24,6 @@ from data.manipulate import TransformedDataset
 
 ################## INITIAL SET-UP ##################
 
-# Specify directories, and if needed create them
 p_dir = "./store/paper_plots_gap_depth_PLARGE"
 d_dir = "./store/data"
 if not os.path.isdir(p_dir):
@@ -38,7 +33,8 @@ if not os.path.isdir(d_dir):
     os.makedirs(d_dir)
     print("Creating directory: {}".format(d_dir))
 
-n_experiments = 10
+n_experiments = 1
+
 ################## STABILITY GAP OPTIMIZER VALUES ##################
 
 # SGD - hyperparameters: lr, momentum
@@ -62,11 +58,11 @@ n_experiments = 10
 # my_plot_name = f"RESET_GS_sg_{optimizer_name}_{lr}lr_NONRESET_{n_experiments}exp"
 
 # # RMSprop - hyperparameters: lr, alpha (optionally eps, momentum)
-optimizer_name = 'RMSprop'
-lr = 0.001
-alpha = 0.9
-titleOfGraph = f"'Incremental Joint Training' with {optimizer_name}, {lr} learning rate, {alpha} alpha"
-my_plot_name = f"RESET_GS_sg_{optimizer_name}_{lr}lr_{alpha}a_NONRESET_{n_experiments}exp"
+# optimizer_name = 'RMSprop'
+# lr = 0.001
+# alpha = 0.9
+# titleOfGraph = f"'Incremental Joint Training' with {optimizer_name}, {lr} learning rate, {alpha} alpha"
+# my_plot_name = f"RESET_GS_sg_{optimizer_name}_{lr}lr_{alpha}a_NONRESET_{n_experiments}exp"
 
 # Adam - hyperparameters: lr,s beta1, beta2 (optionally eps)
 optimizer_name = 'Adam'
@@ -78,7 +74,6 @@ my_plot_name = f"RESET_GS_{optimizer_name}_{lr}lr_{beta1}&{beta2}bet_NONRESET_{n
 
 ################## PDF ##################
 
-# Open pdf for plotting
 plot_name = my_plot_name
 full_plot_name = "{}/{}.pdf".format(p_dir, plot_name)
 pp = visual_plt.open_pdf(full_plot_name)
@@ -201,35 +196,7 @@ iters = 500         #--> for how many iterations to train?
 batch_size = 128    #--> size of mini-batches
 test_size = 2000   #--> number of test samples to evaluate on after each iteration
 
-# # Define a list to keep track of the performance on task 1 after each iteration
-# performance_task1 = []
-# final_performance_after_task1 = None
-# final_performance_after_last_task = None
-
-# # Iterate through the contexts
-# for task_id in range(n_tasks):
-#     current_task = task_id+1
-
-#     # Concatenate the training data of all tasks so far
-#     joint_dataset = torch.utils.data.ConcatDataset(train_datasets[:current_task])
-
-#     # Determine the batch size to use
-#     batch_size_to_use = current_task*batch_size
-
-#     # Train
-#     print('Training after arrival of Task {}:'.format(current_task))
-#     train_and_evaluate(model, trainset=joint_dataset, iters=iters, optimizer_name=optimizer_name, lr=lr,
-#                       batch_size=batch_size_to_use, testset=test_datasets[0],
-#                       test_size=test_size, performance=performance_task1)
-
-#     # Measure Final Performance after Task 1 is finished
-#     if current_task == 1 :
-#         final_performance_after_task1 = performance_task1[-1]
-#     # Measure Final Performance after Task 3 is finished
-#     elif current_task == n_tasks :
-#         final_performance_after_last_task = performance_task1[-1]
-
-################## Running n experiments and averaging results for conclusiveness #####################
+################## Running n experiments and averaging results #####################
 all_performances_experiments = []
 
 for experiment_id in range(n_experiments):
@@ -256,6 +223,7 @@ for experiment_id in range(n_experiments):
 
     for task_id in range(n_tasks):
 
+        # RESETTING THE OPTIMIZER
         # if optimizer_name == 'SGD':
         #     optimizer = torch.optim.SGD(model_copy.parameters(), lr=lr, momentum=momentum_value, nesterov=False)
         # elif optimizer_name == 'NAG':
@@ -282,49 +250,37 @@ for experiment_id in range(n_experiments):
         train_and_evaluate(model_copy, trainset=joint_dataset, iters=iters, optimizer_name=optimizer_name, lr=lr,
                         batch_size=batch_size_to_use, testsets=test_datasets, optimizer=optimizer,
                         test_size=test_size, performances=current_experiment_performances, task_id=current_task)
-
-        # # Measure Final Performance after Task 1 is finished
-        # if current_task == 1 :
-        #     final_performance_after_task1 = performance_task1[-1]
-        # # Measure Final Performance after Task 3 is finished
-        # elif current_task == n_tasks :
-        #     final_performance_after_last_task = performance_task1[-1]
     
     all_performances_experiments.append(current_experiment_performances)
 
-first_task_performances = [experiment[0] for experiment in all_performances_experiments]
-first_task_performances_np = np.array(first_task_performances)
-average_performance = np.mean(first_task_performances_np, axis=0)
+
 ddof = 1 if n_experiments > 1 else 0
-std_err = np.std(first_task_performances_np, axis=0, ddof=ddof)/np.sqrt(n_experiments)
 
-import pandas as pd
+############## SAVING TO CSV ##############
+# first_task_performances = [experiment[0] for experiment in all_performances_experiments]
+# first_task_performances_np = np.array(first_task_performances)
+# average_performance = np.mean(first_task_performances_np, axis=0)
+# std_err = np.std(first_task_performances_np, axis=0, ddof=ddof)/np.sqrt(n_experiments)
 
-# Save mean and stderr for Task 1 to CSV
+# import pandas as pd
+# Save mean and stderr for Task 1 of momentum-based optimizer to CSV
 # momentum_tag = str(momentum_value).replace('.', '_')
 # results_df = pd.DataFrame({
 #     "iteration": np.arange(len(average_performance)),
 #     "mean_perf": average_performance,
 #     "stderr_perf": std_err
 # })
-# # results_path = f"./store/data/perf_momentum_{momentum_tag}.csv"
-# # perf_adagrad.csv
+
 # results_path = f"./store/data/perf_nag_momentum_0_9.csv"
 # results_df.to_csv(results_path, index=False)
 # print(f"Saved results to {results_path}")
 
 ########## Quantitative Metrics ##########
 
-# FORG, ACC
-
 FORG_values_experiments = []
 ACC_values_experiments = []
 min_accuracy_values_experiments = []
 wc_acc_performances_experiments = []
-# wf_max_10_experiments = []
-# wf_max_100_experiments = []
-# wp_max_10_experiments = []
-# wp_max_100_experiments = []
 
 wf10_wf100_wp10_wp100_experiments = []
 
@@ -355,19 +311,20 @@ for i in range(n_experiments):
 
         # WINDOWS
         for j in range(n_tasks - task_id - 1):
-            # Index of Pre-Task Performance
+            # Index of pre-task performance
             baseline_index = iters * (j+1) - 1
-            # First Index of the window
+
+            # First index of window
             start_index = iters * (j+1)
-            # Index right after window
+
+            # Index after window
             end_index_exclusive = start_index + iters
 
-            # Smooth Window to Account for Anomalies
+            # Smooth window
             window = performances_task[start_index:end_index_exclusive]
             smoothed_window = uniform_filter1d(window, size=5)
 
             min_window_index = np.argmin(smoothed_window)
-            # min_index = start_index + min_rel_index
 
             smoothed_baseline = np.mean(performances_task[baseline_index - 4 : baseline_index + 1])
 
@@ -400,15 +357,6 @@ for i in range(n_experiments):
             gd_task.append(smoothed_baseline - window[min_window_index])
 
             new_recovery_index = min(2 * distance_to_minimum_in_window, len(window) - 1)
-            # sr_fixed_task.append((window[min_window_index+30] - window[min_window_index]) / 30)
-            # fixed_delta = 30  # or use distance_to_minimum_in_window
-            # fixed_recovery_index = min(min_window_index + fixed_delta, len(window) - 1)
-            highlight = new_recovery_index
-
-            # if new_recovery_index > min_window_index:
-            #     sr_fixed = (smoothed_window[new_recovery_index] - smoothed_window[min_window_index]) / (distance_to_minimum_in_window)
-            # else:
-            #     sr_fixed = np.nan
 
             if new_recovery_index <= recovery_window_index:
                 sr_fixed = (smoothed_window[new_recovery_index] - smoothed_window[min_window_index]) / (distance_to_minimum_in_window)
@@ -417,14 +365,13 @@ for i in range(n_experiments):
 
             sr_fixed_task.append(sr_fixed)
 
+            ### PRINTS TO CHECK FOR PERFORMANCE
             print(f'For Task {task_id + 1}, Window {j+1}\n')
             print(f'Min index{min_window_index} with value {smoothed_window[min_window_index]}\n')
             print(f'Recovery index{recovery_window_index} with value {smoothed_window[recovery_window_index]}\n')
             print(f'Recovery slope {slope_up}\n')
             print(f'Fixed recovery index{new_recovery_index} with value {smoothed_window[new_recovery_index]}\n')
             print(f'Fixed recovery slope {sr_fixed}\n')
-
-            # print(f'Performance at baseline_index is {performances_task[baseline_index]}, min_index is {window[min_window_index]} and recovery_index is {window[recovery_window_index]}')
         
         print(sr_fixed_task)
         print([np.nanmean(tbp_task), np.nanmean(sd_task), np.nanmean(sr_task), np.nanmean(gd_task), np.nanmean(sr_fixed_task)])
@@ -432,7 +379,7 @@ for i in range(n_experiments):
     
     tbp_sd_sr_gd.append(np.mean(tbp_sd_sr_gd_experiment_i, axis=0))
 
-    ############################# TBP SD SR #############################
+    ############################# WINDOWED #############################
 
     for j in range(n_tasks-1):
         # FORG - difference between final performance and performance after task training finished
@@ -474,17 +421,10 @@ for i in range(n_experiments):
                 array_to_compare_with_wf_100 = array_to_compare_with_wf_100[1:]
 
         wf10_wf100_wp10_wp100_experiment_i.append([wf_max_10, wf_max_100, wp_max_10, wp_max_100])
-        # 1 experiment testing
-        print(f'Task {j+1}')
-        print([wf_max_10, wf_max_100, wp_max_10, wp_max_100])
-
 
     wf10_wf100_wp10_wp100_experiments.append(np.mean(wf10_wf100_wp10_wp100_experiment_i, axis=0))
-    # wf_max_10_experiments.append(wf_max_10)
-    # wf_max_100_experiments.append(wf_max_100)
-    # wp_max_10_experiments.append(wp_max_10)
-    # wp_max_100_experiments.append(wp_max_100)
 
+########### Quantitative metrics as sample mean +/- standard error ###########
 qm_forg = round(np.mean(FORG_values_experiments), 2)
 qm_forg_sd = round(np.std(FORG_values_experiments, ddof=ddof)/np.sqrt(n_experiments), 2)
 qm_acc = round(np.mean(ACC_values_experiments), 2)
@@ -519,46 +459,6 @@ qm_sr = round(mean_tbp_sd_sr[2], 3)
 qm_sr_std = round(sd_tbp_sd_sr[2], 3)
 qm_sr_fixed = round(mean_tbp_sd_sr[4], 3)
 qm_sr_fixed_std = round(sd_tbp_sd_sr[4], 3)
-
-# qm_decline_slope = (lowest_point_after_task_1 - average_performance[iters-1]) / (average_performance.index(lowest_point_after_task_1)- (iters - 1))
-# qm_incline_slope = (next_point_index - lowest_accuracy)
-# qm_tlp
-# qm_tsd
-
-################## PLOTTING ##################
-
-# ## Plot per-iteration performance curve
-# # performance_graph = visual_plt.plot_lines(
-# #     [average_performance], x_axes=list(range(n_tasks*iters)),
-# #     line_names=['Incremental Joint'],
-# #     title=titleOfGraph,
-# #     ylabel="Test Accuracy (%) on Task 1",
-# #     xlabel="Total number of training iterations", figsize=(10,5),
-# #     v_line=[iters*(i+1) for i in range(n_tasks-1)], v_label='Task switch', ylim=(0,100)
-# # )
-
-# plt.figure(figsize=(10, 5))
-# line, = plt.plot(average_performance, label='Average Performance', color='#FFA500', linewidth=1)
-# plt.fill_between(
-#     range(len(average_performance)),
-#     average_performance - std_err,  # lwb
-#     average_performance + std_err,  # upb
-#     color='red',  # light orange
-#     alpha=0.3,
-#     label='Standard Error'
-# )
-
-# for task_switch in range(1, n_tasks):
-#     plt.axvline(x=iters*task_switch, color='gray', linestyle='--', label='Task switch' if task_switch == 1 else "")
-
-# plt.ylim(70,100)
-# plt.title(titleOfGraph)
-# plt.xlabel("Total number of training iterations")
-# plt.ylabel("Test Accuracy (%) on Task 1")
-
-# plt.legend()
-
-# figure_list.append(plt.gcf())
 
 ################## PLOTTING ##################
 
@@ -629,21 +529,19 @@ for task_id in range(n_tasks):
 for switch_id in range(1, n_tasks):
     plt.axvline(x=iters * switch_id, color='gray', linestyle='--', label='Task switch' if switch_id == 1 else "")
 
-# plt.axvline(x=499+highlight, color='gray', linestyle='--')
+plt.tick_params(axis='x', labelsize=19)
+plt.tick_params(axis='y', labelsize=19)
 
 plt.xticks(range(0,2001,500))
 plt.yticks(range(70, 101, 5))
+
 plt.ylim(70, 100)
 plt.xlim(0, 2000)
 
-
-plt.tick_params(axis='x', labelsize=19)
-
-plt.tick_params(axis='y', labelsize=19)
-
-# plt.title(f"{titleOfGraph} — All Tasks")
 plt.xlabel("Iterations", fontsize=18)
 plt.ylabel("Test Accuracy (%)", fontsize=18)
+plt.title(f"Performance on all tasks")
+
 plt.legend(loc='lower right', frameon=True, facecolor='#f2f2f2', edgecolor='#e0e0e0', fontsize=10, framealpha=1, borderpad=1)
 figure_list.append(plt.gcf())
 
@@ -681,7 +579,6 @@ plt.text(0.5, 0.5, text, ha='center', va='center', fontsize=12, color='black')
 
 figure_list.append(text_figure)
 
-## Finalize the pdf with the plots
 # -add figures to pdf
 for figure in figure_list:
     pp.savefig(figure)
