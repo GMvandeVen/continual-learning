@@ -179,12 +179,14 @@ but these preprints can be cited for aspects not featured in the published artic
 
 
 ### Acknowledgments
-The research project from which this code originated has been supported by an IBRO-ISN Research Fellowship,
+The research projects from which this code originated have been supported by an IBRO-ISN Research Fellowship,
 by the ERC-funded project *KeepOnLearning* (reference number 101021347),
 by the National Institutes of Health (NIH) under awards R01MH109556 (NIH/NIMH) and P30EY002520 (NIH/NEI),
 by the *Lifelong Learning Machines* (L2M) program of the Defence Advanced Research Projects Agency (DARPA)
-via contract number HR0011-18-2-0025 and by the Intelligence Advanced Research Projects Activity (IARPA)
-via Department of Interior/Interior Business Center (DoI/IBC) contract number D16PC00003.
+via contract number HR0011-18-2-0025, by the Intelligence Advanced Research Projects Activity (IARPA)
+via Department of Interior/Interior Business Center (DoI/IBC) contract number D16PC00003,
+by a senior postdoctoral fellowship from the Research Foundation – Flanders (FWO) [grant number 1266823N],
+and by a Marie Skłodowska-Curie fellowship under the European Union’s Horizon Europe programme [grant number 101067759].
 Disclaimer: views and conclusions contained herein are those of the authors and should not be interpreted
 as necessarily representing the official policies or endorsements, either expressed or implied,
 of NIH, DARPA, IARPA, DoI/IBC, or the U.S. Government.
