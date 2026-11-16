@@ -75,6 +75,8 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         self.rdw_cap = 64           #-> IEWC: max # of earlier gradient directions used for the 'rdw' weights
         self.iewc_output_norm = None   #-> IEWC: optional function mapping a sample's output-gradient to its scale
                                        #   (if "None", the squared Euclidean norm is used)
+        self.iewc_weight_fn = None     #-> IEWC: optional function (x, y, flat_grad) -> non-negative sample weight
+                                       #   (if not "None", it is used instead of [iewc_weights]; weights are mean-normalized)
         self.context_count = 0      #-> counts 'contexts' (if a prior is used, this is counted as the first context)
         self.data_size = None       #-> inverse prior (can be set to # samples per context, or used as hyperparameter)
         self.epsilon = 0.1          #-> dampening parameter (SI): bounds 'omega' when squared parameter-change goes to 0
@@ -331,8 +333,8 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         IEWC ("Improved EWC", Wiest, 2026; https://arxiv.org/abs/2611.16039) divides each sample's contribution to the
         empirical Fisher by the squared norm of the gradient of its loss with respect to the model output:
             importance = 1/N * sum_n h_n * g_n**2 / (s_n + tau),     with s_n = ||dl_n/df_n||^2 and g_n = dl_n/dtheta,
-        whereby tau = [iewc_kappa] * median{s_n: s_n>0} and the weights h_n are 1 ('uniform') or mean-normalized
-        residual-diversity weights ('rdw'). The importance is then stored and used in the same way as EWC's Fisher.
+        whereby tau = [iewc_kappa] * median{s_n: s_n>0} and the weights h_n are 1 ('uniform'), mean-normalized
+        residual-diversity weights ('rdw'), or mean-normalized weights from a user function [iewc_weight_fn]. The importance is then stored and used in the same way as EWC's Fisher.
 
         [dataset]:          <DataSet> to be used to estimate the importance
         [allowed_classes]:  <list> with class-indeces of 'allowed' or 'active' classes'''
@@ -386,7 +388,13 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                     if p.requires_grad:
                         n = n.replace('.', '__')
                         grads[n] = p.grad.detach() if p.grad is not None else torch.zeros_like(p)
-            weight = 1. if rdw is None else rdw(torch.cat([g.flatten() for g in grads.values()]))
+            if self.iewc_weight_fn is not None:
+                weight = float(self.iewc_weight_fn(x[index:index+1], y[index:index+1],
+                                                   torch.cat([g.flatten() for g in grads.values()])))
+            elif rdw is not None:
+                weight = rdw(torch.cat([g.flatten() for g in grads.values()]))
+            else:
+                weight = 1.
             weight_sum += weight
             if denominators[index] > 0 and weight > 0:
                 for n in grads:

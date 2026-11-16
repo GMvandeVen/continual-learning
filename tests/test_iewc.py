@@ -110,6 +110,18 @@ class TestIEWC(unittest.TestCase):
             importance = get_importance(model, dataset)
         self.assertAllClose(importance, manual_importance(model, dataset, weights=weights))
 
+    def test_custom_weights(self):
+        model, dataset = get_model_and_data()
+        model.eval()
+        reference = get_importance(model, dataset)
+        # A constant weight function gives the uniform estimate
+        model.iewc_weight_fn = lambda x, y, grad: 3.
+        self.assertAllClose(get_importance(model, dataset), reference)
+        # A weight function that drops all samples of class 0 matches the formula with mean-normalized weights
+        model.iewc_weight_fn = lambda x, y, grad: float(y.item() != 0)
+        weights = (dataset.tensors[1] != 0).double()
+        self.assertAllClose(get_importance(model, dataset), manual_importance(model, dataset, weights=weights/weights.mean()))
+
 
 if __name__ == '__main__':
     unittest.main()
