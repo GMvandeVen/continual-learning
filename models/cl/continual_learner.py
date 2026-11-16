@@ -7,6 +7,7 @@ from torch.nn import functional as F
 from utils import get_data_loader
 from models import fc
 from models.utils.ncl import additive_nearest_kf
+from models.utils.iewc import ResidualDiversityWeights
 
 
 class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
@@ -67,6 +68,13 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                                     #   - 'true':   use the true label (NOTE: this is also called "empirical FI")
         self.fisher_batch = 1       #-> batch size for estimating FI-matrix (should be 1, for best results)
                                     #   (different from 1 only works if [fisher_labels]='pred' or 'true')
+        self.fisher_iewc = False    #-> whether to use the IEWC importance estimate instead of the FI-matrix
+                                    #   (this divides each sample's empirical-FI term by its squared output-gradient)
+        self.iewc_kappa = 1e-2      #-> IEWC: relative damping (tau = kappa * median of nonzero squared output-grads)
+        self.iewc_weights = 'uniform'  #-> IEWC: how to weight the samples? (uniform|rdw)
+        self.rdw_cap = 64           #-> IEWC: max # of earlier gradient directions used for the 'rdw' weights
+        self.iewc_output_norm = None   #-> IEWC: optional function mapping a sample's output-gradient to its scale
+                                       #   (if "None", the squared Euclidean norm is used)
         self.context_count = 0      #-> counts 'contexts' (if a prior is used, this is counted as the first context)
         self.data_size = None       #-> inverse prior (can be set to # samples per context, or used as hyperparameter)
         self.epsilon = 0.1          #-> dampening parameter (SI): bounds 'omega' when squared parameter-change goes to 0
@@ -288,6 +296,13 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
         est_fisher_info = {n: p/index for n, p in est_fisher_info.items()}
 
         # Store new values in the network
+        self.store_fisher(est_fisher_info)
+
+        # Set model back to its initial mode
+        self.train(mode=mode)
+
+    def store_fisher(self, est_fisher_info):
+        '''Store the current parameter values and the estimated diagonal Fisher (or IEWC importance) in the network.'''
         for gen_params in self.param_list:
             for n, p in gen_params():
                 if p.requires_grad:
@@ -305,6 +320,84 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
 
         # Increase context-count
         self.context_count += 1
+
+    def iewc_sample_losses(self, output, label):
+        '''Per-sample losses used by IEWC (by default the same classification loss as for the empirical Fisher).'''
+        return F.cross_entropy(output, label, reduction='none')
+
+    def estimate_iewc_fisher(self, dataset, allowed_classes=None):
+        '''After completing training on a context, estimate the diagonal parameter importance of IEWC.
+
+        IEWC ("Improved EWC", Wiest, 2026; https://arxiv.org/abs/2611.16039) divides each sample's contribution to the
+        empirical Fisher by the squared norm of the gradient of its loss with respect to the model output:
+            importance = 1/N * sum_n h_n * g_n**2 / (s_n + tau),     with s_n = ||dl_n/df_n||^2 and g_n = dl_n/dtheta,
+        whereby tau = [iewc_kappa] * median{s_n: s_n>0} and the weights h_n are 1 ('uniform') or mean-normalized
+        residual-diversity weights ('rdw'). The importance is then stored and used in the same way as EWC's Fisher.
+
+        [dataset]:          <DataSet> to be used to estimate the importance
+        [allowed_classes]:  <list> with class-indeces of 'allowed' or 'active' classes'''
+
+        # Set model to evaluation mode
+        mode = self.training
+        self.eval()
+
+        # Select the samples to use, which are kept so that both passes below see exactly the same inputs
+        n_samples = len(dataset) if self.fisher_n is None else min(self.fisher_n, len(dataset))
+        x, y = next(iter(get_data_loader(dataset, batch_size=n_samples, cuda=self._is_on_cuda())))
+        if allowed_classes is not None:
+            y = torch.LongTensor([int(np.where(i == allowed_classes)[0][0]) for i in y.numpy()])
+
+        # First pass: compute scale of output-gradient for each sample, and from these the damping term
+        scales = []
+        for x_, y_ in zip(x.split(256), y.split(256)):
+            with torch.no_grad():
+                output = self(x_.to(self._device()))
+                output = output if allowed_classes is None else output[:, allowed_classes]
+            output.requires_grad_()
+            loss = self.iewc_sample_losses(output, y_.to(self._device())).sum()
+            output_grads = torch.autograd.grad(loss, output)[0]
+            if self.iewc_output_norm is None:
+                scales.append(output_grads.pow(2).sum(dim=1))
+            else:
+                scales.append(torch.stack([self.iewc_output_norm(r) for r in output_grads]))
+        scales = torch.cat(scales).detach()
+        positive_scales = scales[scales > 0]
+        tau = self.iewc_kappa * torch.quantile(positive_scales, 0.5) if len(positive_scales) > 0 else 0.
+        denominators = scales + tau
+
+        # Second pass: compute the per-sample parameter gradients and keep a weighted running sum of the IEWC terms
+        est_fisher_info = {}
+        for gen_params in self.param_list:
+            for n, p in gen_params():
+                if p.requires_grad:
+                    n = n.replace('.', '__')
+                    est_fisher_info[n] = p.detach().clone().zero_()
+        rdw = ResidualDiversityWeights(max_basis=self.rdw_cap) if self.iewc_weights=='rdw' else None
+        weight_sum = 0.
+        for index in range(n_samples):
+            output = self(x[index:index+1].to(self._device()))
+            output = output if allowed_classes is None else output[:, allowed_classes]
+            loss = self.iewc_sample_losses(output, y[index:index+1].to(self._device())).sum()
+            self.zero_grad()
+            loss.backward()
+            grads = {}
+            for gen_params in self.param_list:
+                for n, p in gen_params():
+                    if p.requires_grad:
+                        n = n.replace('.', '__')
+                        grads[n] = p.grad.detach() if p.grad is not None else torch.zeros_like(p)
+            weight = 1. if rdw is None else rdw(torch.cat([g.flatten() for g in grads.values()]))
+            weight_sum += weight
+            if denominators[index] > 0 and weight > 0:
+                for n in grads:
+                    est_fisher_info[n] += (weight / denominators[index]) * grads[n] ** 2
+
+        # Normalize, such that the sample weights have mean one (if all weights are 0, the importance is zero)
+        if weight_sum > 0:
+            est_fisher_info = {n: p/weight_sum for n, p in est_fisher_info.items()}
+
+        # Store new values in the network
+        self.store_fisher(est_fisher_info)
 
         # Set model back to its initial mode
         self.train(mode=mode)

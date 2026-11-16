@@ -115,7 +115,7 @@ def get_param_stamp(args, model_name, verbose=True, replay_model_name=None, feat
             param_reg_stamp += "-PreC{}".format(args.alpha)
         # -how is the parameter importance computed?
         if args.importance_weighting=='fisher':
-            param_reg_stamp += "-FI{}{}{}{}{}{}".format(
+            param_reg_stamp += "-FI{}{}{}{}{}{}{}".format(
                 "kfac" if checkattr(args, 'fisher_kfac') else 'diag',
                 "I{}".format(args.data_size) if checkattr(args, 'fisher_init') else "",
                 "N" if args.fisher_n is None else args.fisher_n,
@@ -123,6 +123,8 @@ def get_param_stamp(args, model_name, verbose=True, replay_model_name=None, feat
                     "Sam" if args.fisher_labels=="sample" else "All"
                 )),
                 "B{}".format(args.fisher_batch) if (hasattr(args, 'fisher_batch') and args.fisher_batch>1) else "",
+                "-IEWC{}{}".format(args.iewc_kappa, "-rdw{}".format(args.rdw_cap) if args.iewc_weights=="rdw" else "")
+                if checkattr(args, 'fisher_iewc') else "",
                 # -use a separate term per task or a forgetting coefficient:
                 "-offline" if checkattr(args, 'offline') else (
                     "-forg{}".format(args.gamma) if hasattr(args, 'gamma') and args.gamma < 1 else ""

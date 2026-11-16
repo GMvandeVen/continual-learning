@@ -353,10 +353,12 @@ def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
             # -if needed, apply correct context-specific mask
             if model.mask_dict is not None:
                 model.apply_XdGmask(context=context)
-            ##--> EWC/NCL: estimate the Fisher Information matrix
+            ##--> EWC/NCL/IEWC: estimate the Fisher Information matrix (or IEWC importance)
             if model.importance_weighting=='fisher' and (model.weight_penalty or model.precondition):
                 if model.fisher_kfac:
                     model.estimate_kfac_fisher(training_dataset, allowed_classes=allowed_classes)
+                elif model.fisher_iewc:
+                    model.estimate_iewc_fisher(training_dataset, allowed_classes=allowed_classes)
                 else:
                     model.estimate_fisher(training_dataset, allowed_classes=allowed_classes)
             ##--> OWM: calculate and update the projection matrix

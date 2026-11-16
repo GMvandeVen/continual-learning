@@ -221,6 +221,7 @@ def add_cl_options(parser, main=False, compare_all=False, compare_replay=False, 
             param_reg.add_argument("--ewc-kfac", action="store_true",
                                    help="select defaults for 'KFAC-EWC' (Ritter et al. 2018)")
             param_reg.add_argument("--owm", action="store_true", help="select defaults for 'OWM' (Zeng et al. 2019)")
+            param_reg.add_argument("--iewc", action="store_true", help="select defaults for 'IEWC' (Wiest, 2026)")
             # Custom commands for specifying how parameter regularization should be performed
             param_reg.add_argument("--weight-penalty", action='store_true',
                                    help="penalize parameters important for past contexts")
@@ -240,6 +241,14 @@ def add_cl_options(parser, main=False, compare_all=False, compare_replay=False, 
             param_reg.add_argument("--fisher-kfac", action='store_true',
                                    help="-> Fisher: use KFAC approximation rather than diagonal")
             param_reg.add_argument("--fisher-init", action='store_true', help="-> Fisher: start with prior (as in NCL)")
+            param_reg.add_argument("--fisher-iewc", action='store_true',
+                                   help="-> Fisher: use IEWC importance rather than FI (needs --fisher-labels=true)")
+            param_reg.add_argument("--iewc-kappa", type=float, default=1e-2,
+                                   help="-> IEWC: relative damping (default: %(default)s)")
+            param_reg.add_argument("--iewc-weights", type=str, default='uniform', choices=['uniform', 'rdw'],
+                                   help="-> IEWC: how to weight the samples?")
+            param_reg.add_argument("--rdw-cap", type=int, default=64, metavar='K',
+                                   help="-> IEWC: max # of earlier directions for 'rdw' weights")
             param_reg.add_argument("--fisher-prior", type=float, metavar='SIZE', dest='data_size',
                                    help="-> Fisher: prior-strength in 'data_size' (as in NCL)")
         param_reg.add_argument('--epsilon', type=float, default=0.1, dest="epsilon", help="-> SI: dampening parameter")
