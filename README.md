@@ -96,6 +96,7 @@ To run specific methods, you can use the following:
 - Separate Networks: `./main.py --separate-networks`
 - Context-dependent-Gating (XdG): `./main.py --xdg`
 - Elastic Weight Consolidation (EWC): `./main.py --ewc` (read first: [ICLR-blogpost](ICLRblogpost/README.md))
+- Improved Elastic Weight Consolidation (IEWC): `./main.py --iewc` (see [paper](https://arxiv.org/abs/2611.16039))
 - Synaptic Intelligence (SI): `./main.py --si`
 - Learning without Forgetting (LwF): `./main.py --lwf`
 - Functional Regularization Of the Memorable Past (FROMP): `./main.py --fromp`

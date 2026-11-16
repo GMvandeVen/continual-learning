@@ -23,6 +23,12 @@ def set_method_options(args, **kwargs):
     if checkattr(args, 'owm'):
         args.precondition = True
         args.importance_weighting = 'owm'
+    if checkattr(args, 'iewc'):
+        args.weight_penalty = True
+        args.importance_weighting = 'fisher'
+        args.fisher_iewc = True
+        args.fisher_labels = 'true'
+        args.offline = True
     if checkattr(args, "lwf"):
         args.replay = "current"
         args.distill = True
@@ -138,7 +144,9 @@ def set_default_values(args, also_hyper_params=True, single_context=False, no_bo
             ) if args.ewc_lambda is None else args.ewc_lambda
         if hasattr(args, 'reg_strength'):
             args.reg_strength = (
-                args.si_c if checkattr(args, 'si') else (args.ewc_lambda if checkattr(args, 'ewc') else 1.)
+                args.si_c if checkattr(args, 'si') else (
+                    args.ewc_lambda if (checkattr(args, 'ewc') or checkattr(args, 'iewc')) else 1.
+                )
             ) if args.reg_strength is None else args.reg_strength
         # -use a prior for the Fisher (as in NCL)
         if hasattr(args, 'data_size'):
@@ -175,6 +183,11 @@ def check_for_errors(args, pretrain=False, **kwargs):
             raise NotImplementedError('Replay-through-Feedback currently does not support XdG (in the encoder).')
         if checkattr(args, 'feedback') and args.importance_weighting=='fisher' and checkattr(args, 'fisher_kfac'):
             raise NotImplementedError('Replay-through-Feedback currently does not support using KFAC Fisher.')
+        # -IEWC uses per-sample gradients of the loss with the true labels, and is (so far) only diagonal
+        if checkattr(args, 'fisher_iewc') and (checkattr(args, 'fisher_kfac') or not args.fisher_labels=='true'
+                                               or (hasattr(args, 'fisher_batch') and args.fisher_batch>1)):
+            raise NotImplementedError("IEWC is only supported with --fisher-labels=true, --fisher-batch=1 and "
+                                      "without KFAC.")
         if checkattr(args, 'feedback') and checkattr(args, 'bce'):
             raise NotImplementedError('Replay-through-Feedback currently does not support binary classification loss.')
         # -if 'BCEdistill' is selected for other than scenario=="class", give error

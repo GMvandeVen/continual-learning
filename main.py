@@ -222,6 +222,12 @@ def run(args, verbose=False):
         model.fisher_n = args.fisher_n if hasattr(args, 'fisher_n') else None
         model.fisher_labels = args.fisher_labels if hasattr(args, 'fisher_labels') else 'all'
         model.fisher_batch = args.fisher_batch if hasattr(args, 'fisher_batch') else 1
+        # -options relating to 'IEWC' (Wiest, 2026)
+        model.fisher_iewc = checkattr(args, 'fisher_iewc')
+        if model.fisher_iewc:
+            model.iewc_kappa = args.iewc_kappa
+            model.iewc_weights = args.iewc_weights
+            model.rdw_cap = args.rdw_cap
         # -options relating to 'Offline EWC' (Kirkpatrick et al., 2017) and 'Online EWC' (Schwarz et al., 2018)
         model.offline = checkattr(args, 'offline')
         if not model.offline:
